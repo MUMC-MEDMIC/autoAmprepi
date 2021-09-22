@@ -1,0 +1,34 @@
+---
+title: "deContam Frequency processing"
+output: html_document
+
+---
+
+
+```{r freqLib}
+
+library(decontam)
+
+```
+
+### Frequency method:
+
+
+The distribution of the frequency of each sequence feature as a function of the input DNA concentration is used to identify contaminants.
+
+
+```{r freqM, warning = FALSE}
+
+## Decontam frequency method
+
+contamdf.freq <- readRDS(file.path(decontamFolder, "frequency.RDS"))
+
+freqFalse <- head(which(contamdf.freq$contaminant),1)
+freqTrue <- head(which(contamdf.freq$contaminant=="FALSE"),1)
+
+plot_frequency(fltps, taxa_names(fltps)[c(freqTrue,freqFalse)], conc="DNA_con")
+
+```
+
+
+The frequencies of ASVs as a function of DNA concentration. The true ASV is on the left and the contaminant is on the right. Each dot is the frequency of the ASV in each sample. It is expected that contamination in DNA samples would either be equal or in lower concentration in all samples. The DNA concentration from true samples can varied. So the frequency of the contamination is expected to be 1/total DNA. In samples with lower DNA concentation the contamination will appear in higher frequencies and in higher DNA concentration the frequencies will be lower. That behavior is the inversely proportional to the input DNA concentration.

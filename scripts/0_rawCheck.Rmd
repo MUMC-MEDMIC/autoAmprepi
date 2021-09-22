@@ -1,0 +1,169 @@
+---
+title: "Raw checker"
+output: html_document
+
+params:
+  projectName:
+    label: "Name of the report"
+    value: "Mock"
+    input: text
+  dirRaw:
+    label: "Working directory"
+    value: "Type direcotry for standalone script"
+    input: text
+  dirOut:
+    label: "Output directory"
+    value: "Type output directory for standalone script"
+    input: text
+  infile:
+    label: "Experiment file"
+    value: "Location and metafile"
+    input: file
+  priFor:
+    label: "Forward primer"
+    value: "CACGGTCGKCGGCGCCATT"
+    input: text
+  priRev:
+    label: "Reverse primer"
+    value: "GGACTACHVGGGTWTCTAAT"
+    input: text
+
+---
+
+
+```{r setup0, echo = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+
+```
+
+
+```{r reproduce}
+
+## Change to FALSE if you ran the analysis and only want to produce the report again
+firstRun0 <- TRUE
+
+```
+
+
+```{r paramDirsCheck, child = "conditions/0dirCheck.Rmd"}
+
+```
+
+
+```{r rawcheckParams}
+
+## Check experimental file from main script
+## If the parameter is empty turns on standalone settings
+if (is.null(params$data)) {
+
+  ## Check the existence of experimental file
+  if (file.exists(params$infile)) {
+
+    ## Set file to variable
+    expFile <- params$infile
+    ## Use experiment file in specific chunk
+    experiOn = TRUE
+  }
+} else {
+  ## Use experimental file from main script
+  expFile <- experimentFile
+
+  if (file.exists(expFile)) {
+
+    ## No experiment file as input
+    experiOn = TRUE
+  }
+} 
+
+## Check primers from main script
+## If either are not null
+if (!is.null(params$primerFor) | !is.null(params$primerFor)){
+
+  ## If both primers are not empty
+  if (params$primerFor != '' && params$primerRev != ''){
+
+    ## Both primers found on main script
+    FWD <- primerForward
+    REV <- primerReverse
+    primerFound <- TRUE
+  } else {
+
+    ## Main script has no primers
+    primerFound <- FALSE
+  }
+} else {
+
+  ## No main script
+  FWD <- params$priFor
+  REV <- params$priRev
+
+  if (FWD != '' && REV != ''){
+
+    ## Standalone primers
+    primerFound <- TRUE
+  } else {
+ 
+    ## No stanalone primers
+    primerFound <- FALSE
+  }
+}
+
+```
+
+
+```{r lib0, include = FALSE}
+
+library("ShortRead")
+library("dada2")
+library("tidyverse")
+library("knitr")
+
+start_time <- Sys.time()
+
+```
+
+
+## Raw analysis
+
+
+In the `r basename(rawDir)` folder, there were `r length(sample.names)` fastq pairs found.
+Only, samples with the corresponding pair are anaylized.
+Based on the metafile, a total of `r length(foundSamples)` samples and `r if (identical(missingRaw, character(0))){ "0" } else {length(missingRaw)}` missing samples were detected. 
+Please check the final metafile `r xfun::embed_file( file.path(reportDir,"metafile.csv"), text = "Here !")`
+
+
+```{r primerCheck, child = if (primerFound) "conditions/0primersCheck.Rmd"}
+
+```
+
+
+Visualizing the quality profiles of the first two forward and reverse reads.
+
+
+```{r rawQuality, warning = FALSE}
+
+## Import final files csv
+runFiles <- read.csv(file.path(reportDir,"metafile.csv"))
+runFound <- runFiles[runFiles$Status=="Found",]
+
+## First found sample
+firstRaw <- head(runFound$Samples,1)
+
+## Detect the first pair for figure
+samPairFig <- list.files(rawDir, pattern=firstRaw, full.names = TRUE)
+readsRaw <- plotQualityProfile(samPairFig[1:2])
+readsRaw
+
+```
+
+
+In gray-scale is a heat map of the frequency of each quality score at each base position. The mean quality score at each position is shown by the green line. The quartiles of the quality score distribution by the orange lines. The red line shows the scaled proportion of reads that extend to at least that position.
+
+
+```{r endTime0}
+
+end_time <- Sys.time()
+end_time - start_time
+
+```

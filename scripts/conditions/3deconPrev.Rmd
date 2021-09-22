@@ -1,0 +1,38 @@
+---
+title: "deContam Frequency processing"
+output: html_document
+
+---
+
+
+```{r prevLib}
+
+library(decontam)
+
+```
+
+### Prevalence method:
+
+The prevalence (presence/absence across samples) of each sequence feature in true positive samples is compared to the prevalence in negative controls to identify contaminants.
+
+
+```{r prevM }
+
+## Decontam Prevalence method
+
+contamdf.prev <- readRDS(file.path(decontamFolder, "prevalence.RDS"))
+fltps.pa <- transform_sample_counts(fltps, function(abund) 1*(abund>0))
+fltps.pa.neg <- prune_samples(sample_data(fltps.pa)$Sample_Type == "Negative", fltps.pa)
+fltps.pa.pos <- prune_samples(sample_data(fltps.pa)$Sample_Type != "Negative", fltps.pa)
+
+# Make data.frame of prevalence in positive and negative samples
+fltdf.pa <- data.frame(pa.pos=taxa_sums(fltps.pa.pos), pa.neg=taxa_sums(fltps.pa.neg),
+                       contaminant=contamdf.prev$contaminant)
+ggplot(data=fltdf.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+
+```
+
+
+Figure shows branches that show up mostly in positive samples, and others that show up mostly in negative controls.
+

@@ -1,0 +1,267 @@
+---
+title: "deContam processing"
+output: html_document
+
+---
+
+
+```{r deconLib}
+
+library(tidyverse)
+
+```
+
+## Contamination detection 
+
+
+The decontam package was used for detection of contaminations. There are two main methods: Frequency and Prevalence. Appropriate method is selected depending on information provided in the metafile.
+
+
+```{r contamCondition}
+
+decontamFolder <- file.path(reportDir, "decontam")
+if (!dir.exists(decontamFolder)) {
+
+  dir.create(decontamFolder)
+}
+
+decontamFull <- FALSE
+singleFreq <- FALSE
+singlePrev <- FALSE
+
+if ( "frequency" %in% decontamMode ) {
+
+  decontamFull <- TRUE
+} else if ( "prevalence" %in% decontamMode) {
+
+  singlePrev <- TRUE
+  methdContam <- "prevalence"
+} 
+
+```
+
+
+```{r deContam, eval = decontamFull, include = FALSE}
+
+## Specify the control group for prevalence
+sample_data(fltps)$is.neg <- sample_data(fltps)$Sample_Type == "Negative"
+
+## List out contamination methods
+#decontamMode <- c("frequency", "prevalence", "combined", "minimum", "either", "both")
+
+## Create a data frame from matrix
+contamMethod <- data.frame(matrix(nrow = 6, ncol = 2))
+
+for (d in 1:length(decontamMode)) {
+
+   ## Run contamination method
+   if (decontamMode[[d]]=="frequency"){
+
+     decontamdf <- isContaminant(fltps, method=decontamMode[[d]], conc="DNA_con" )
+   } else {
+
+     decontamdf <- isContaminant(fltps, method=decontamMode[[d]], conc="DNA_con", neg="is.neg" )
+   }
+   
+   saveRDS(decontamdf, file.path(decontamFolder, paste0(decontamMode[[d]], ".RDS")))
+
+   ## True contamination
+   contamSum <- sum(table(decontamdf$contaminant)["TRUE"])
+   ## Write method
+   contamMethod[d,1] <- decontamMode[[d]]
+   
+   ## If contamination is found
+   if (!is.na(contamSum)) {
+      ## Write number of contam found
+      contamMethod[d,2] <- contamSum
+
+      ## Prune non contam
+      ps.Contam <- prune_taxa(decontamdf$contaminant, fltps)
+
+      ## Prun out contam
+#      ps.ContamFree <- prune_taxa(!decontamdf$contaminant, fltps)
+
+      ## Get features out
+      prevadf = apply(X = otu_table(ps.Contam),
+                     MARGIN = ifelse(taxa_are_rows(ps.Contam), yes = 1, no = 2),
+                     FUN = function(x){sum(x > 0)})
+
+## Prevalence as base, total abundance = taxa sum, tax table as taxonomy.
+      prevadf = data.frame(Prevalence = prevadf,
+                          TotalAbundance = "contam")
+      prevadf$Prevalence <- NULL
+      names(prevadf) <- c(paste0(decontamMode[[d]]))
+#      print (prevadf)
+
+      write.csv(prevadf, file.path(decontamFolder, paste0("ps_dc_",decontamMode[[d]],".csv")))
+   } else {
+      contamMethod[d,2] <- 0
+   }
+}
+
+```
+
+
+```{r singleDecontam, eval = decontamFull}
+
+names(contamMethod) <- c("Method","Contaminants")
+
+deconFreqResult <- contamMethod[contamMethod$Method == "frequency","Contaminants"]
+if (deconFreqResult > 0){
+
+  singleFreq <- TRUE
+}
+
+deconPrevResult <- contamMethod[contamMethod$Method == "prevalence","Contaminants"]
+if (deconPrevResult > 0){
+
+  singlePrev <- TRUE
+}
+
+```
+
+
+```{r prevaAlone, eval = singlePrev}
+
+## Condition if metafile only has info for prevalence
+## Specify the control group for prevalence
+sample_data(fltps)$is.neg <- sample_data(fltps)$Sample_Type == "Negative"
+
+contamdf.freq <- isContaminant(fltps, method="prevalence",  neg="is.neg")
+saveRDS(contamdf.freq, file.path(decontamFolder, "prevalence.RDS"))
+
+```
+
+
+```{r freqSingle, child = if (singleFreq) "3deconFreq.Rmd"}
+
+```
+
+
+```{r prevSingle, child = if (singlePrev) "3deconPrev.Rmd"}
+
+```
+
+
+```{r decontamTable, eval = decontamFull}
+
+detype  <- c("frequency","prevalence","combined","minimum","either","both")
+
+freqMetd <- "Use frequency that varies inversely with sample DNA concentration. Default p < 0.1"
+prevaMetd <- "Contaminants identified by increased prevalence in negative controls"
+combiMetd <- "Frequency and prevalence probabilities are combined with Fisher's method"
+miniMetd <- "Minimum of the frequency and prevalence probabilities is used"
+eithMetd <- "Contaminants identified by either the frequency or prevalance methods"
+bothMetd <- "Contaminants identified by both the frequency and prevalance methods"
+
+methExpl <- c(freqMetd, prevaMetd, combiMetd, miniMetd, eithMetd, bothMetd)
+
+deconTable <- data.frame(detype,methExpl)
+
+names(deconTable) <- c("Method","Explaination")
+
+contamMethod <- merge(contamMethod, deconTable, by = "Method")
+contamMethod <- contamMethod[order(factor(contamMethod$Method, levels = decontamMode)),]
+row.names(contamMethod) <- NULL
+
+contamMethod <- contamMethod %>% dplyr::select(Method, Explaination, Contaminants)
+
+knitr::kable(contamMethod, caption = "Contamination detected using different methods")
+
+```
+
+
+```{r deconTaxTable, eval = decontamFull }
+
+## List files with pattern
+dFiles <- list.files(decontamFolder, pattern="ps_dc_", full.names = TRUE)
+import.list <- plyr::llply(dFiles, read.csv)
+
+## Reduce and merge files
+mergedecontams <- Reduce(function(x,y) merge(x,y,all = T, by = c("X")), import.list, accumulate=F)
+
+## Gets number of samples, taxonomy and ASV no.
+fullps = apply(X = otu_table(fltps),
+               MARGIN = ifelse(taxa_are_rows(fltps), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+
+fullps = data.frame(NumSamples = fullps,
+                    TotalReads = taxa_sums(fltps),
+                    tax_table(fltps)[, c("Genus")])
+
+## Seq as rownames
+rownames(mergedecontams) <- mergedecontams$X
+mergedecontams$X <- NULL
+
+## Merge by rownames
+mergedecontams <- merge(mergedecontams, fullps, by = "row.names")
+
+## Change Row.names to ASVs
+colnames(mergedecontams)[colnames(mergedecontams) == "Row.names"] <- "ASVs"
+
+write.csv(mergedecontams, paste0(reportDir,"/contamTable.csv"))
+
+xfun::embed_file(paste0(reportDir,"/contamTable.csv"), text = "Full list of contamination ASVs")
+
+```
+
+
+```{r prevaTable, eval = !(decontamFull)}
+
+detype  <- "prevalence"
+
+prevaMetd <- "Contaminants identified by increased prevalence in negative controls"
+
+if (file.exists(file.path(decontamFolder, "prevalence.RDS"))){
+
+  contamdf.prev <- readRDS(file.path(decontamFolder, "prevalence.RDS"))
+  prevaSum <- sum(table(contamdf.prev$contaminant)["TRUE"])
+  if (!is.na(prevaSum)) {
+
+    prevaTable <- data.frame(detype, prevaMetd, prevaSum)
+  } else {
+
+    prevaTable <- data.frame(detype, prevaMetd, "0")
+  }
+}
+
+names(prevaTable) <-  c("Method","Explaination","Contaminants")
+knitr::kable(prevaTable, caption = "Contamination detected using prevalence methods")
+
+```
+
+
+```{r removContam}
+
+## Check for the selected method
+decontamFileCheck <- file.path(decontamFolder, paste0(methdContam,".RDS"))
+if (file.exists(decontamFileCheck)){
+
+  deconPicked <- readRDS(decontamFileCheck)
+  fltps.ContamFree <- prune_taxa(!deconPicked$contaminant, fltps)
+  saveRDS(fltps.ContamFree, paste0(reportDir,"/fltpsContamFree.RDS"))
+  choiceDecontam <- methdContam
+} else {
+
+  higestDeconMethod <- contamMethod[which.max(contamMethod$Contaminants), "Method", drop = FALSE]
+  newDecontam <- higestDeconMethod$Method
+
+  print(paste0("Missing files. Using ",newDecontam, " method instead.")) 
+
+  altdeconFileCheck <- file.path(decontamFolder, paste0(newDecontam,".RDS"))
+    if (file.exists(altdeconFileCheck)){
+      
+      deconPicked <- readRDS(altdeconFileCheck)
+      fltps.ContamFree <- prune_taxa(!deconPicked$contaminant, fltps)
+      saveRDS(fltps.ContamFree, paste0(reportDir,"/fltpsContamFree.RDS"))
+      choiceDecontam <- newDecontam
+    } else {
+
+      print ("Missing alt decontam file. Recheck")
+    }
+}
+
+```
+
+The contamination ASVs were removed using decontam `r choiceDecontam` method. 
+

@@ -1,0 +1,63 @@
+---
+title: "Library size"
+output: html_document
+
+---
+
+
+## Quality control
+
+
+```{r librarySize,  message = FALSE, fig.cap = "Reads library size after preprocessing"}
+
+## Filter out Mocks
+#expReads <- sampTrack %>% filter(Sample_or_Control != "Mock")
+
+## order based on library size
+expReads <- sampTrack[order(sampTrack$nonchim), ]
+
+## number of rows and start the count from 1 to nrow.
+expReads$Index <- seq(nrow(expReads))
+
+## Draw figures
+ggplot(data=expReads, aes(x=Index, y=nonchim, color=Sample_Type)) + geom_point() +
+  labs(y="Library Size", x="Index Number") + scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+```
+
+
+Library size of all samples and controls with the Mocks.
+
+
+```{r qcFilter, message = FALSE, fig.cap = "Reads library size after reads filtering"}
+
+## Filter Control with 0 reads
+
+usectrl <- expReads %>% dplyr::select(Samples,Sample_Type, nonchim) %>% filter(Sample_Type == "Negative" & nonchim > 0) %>% dplyr::select(Samples)
+
+## Filter samples and Mock with more than params$reads reads
+useexp <- expReads %>% dplyr::select(Samples, Sample_Type, nonchim) %>% filter(Sample_Type != "Negative" & nonchim > min_reads ) %>% dplyr::select(Samples) 
+
+if (nrow(useexp) <= 1) {
+  print ("Warning: After filtering Mock and Negative out, no sample left. Please recheck your metafile or  modify your min reads to include more samples.")
+  #knitr::knit_exit()
+} 
+
+## Merge two filtered samples
+filterdExp <- rbind(useexp, usectrl)
+
+keepSamp <- filterdExp$Samples
+
+filterdExp <- expReads[expReads$Samples %in% keepSamp,]
+
+## Draw figures
+ggplot(data=filterdExp, aes(x=Index, y=nonchim, color=Sample_Type)) + geom_point() + labs(y="Library Size", x="Index Number") + scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+write.csv(filterdExp, file.path(reportDir, "filterdExp.csv"))
+
+```
+
+
+Samples with reads below `r min_reads` were filtered out. Control samples with 0 reads were removed. After filtering only `r nrow(filterdExp)` samples and controls are left.
+
+

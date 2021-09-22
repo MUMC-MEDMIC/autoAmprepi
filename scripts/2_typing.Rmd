@@ -1,0 +1,172 @@
+---
+title: "Typing"
+output: html_document
+
+params:
+  projectname:
+    label: "Name of the report"
+    value: "MockTest"
+    input: text
+  dirRaw:
+    label: "Working directory"
+    value: "../raw"
+    input: text
+  dirOut:
+    label: "Output directory"
+    value: "../"
+    input: text
+  taxo:
+    label: "Typing method: dada2 (species) or DECIPHER (genus)"
+    input: radio
+    value: DECIPHER
+    choices: ["dada2"]
+---
+
+```{r setup2, echo = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+
+```
+
+```{r lib2, include = FALSE}
+
+library("dada2")
+library("DECIPHER")
+
+start_time <- Sys.time()
+
+```
+
+```{r paramDirs2, child = "conditions/0dirCheck.Rmd"}
+
+```
+
+```{r typingReqs}
+
+seqtabfinFile <- file.path(reportDir, paste0(projectn, "_seqtab_fin.RDS"))
+
+if (file.exists(seqtabfinFile)) {
+  ## Load in sequece tab without chimeras reads
+  seqtab.fin <-  readRDS(seqtabfinFile)
+} else {
+  print ("Missing sequence tab file without chimera. Please go back one stage.")
+  knitr::knit_exit()
+}
+
+```
+
+
+```{r typingParams}
+
+## Check experimental file from main script
+## If the parameter is empty turns on standalone settings
+if (is.null(params$taxa)) {
+  typeTyping <- params$taxo
+
+} else {
+  typeTyping <- taxaTyping 
+  
+}
+
+```
+
+
+```{r dirTaxaDB, include=FALSE}
+
+taxDBdir <- file.path("../taxDB")
+ifelse(!dir.exists(taxDBdir), dir.create(taxDBdir),FALSE)
+
+```
+
+```{r typingControl}
+
+## Typing type
+if (typeTyping == "dada2") {
+
+  typeDada = TRUE
+}
+
+```
+
+```{r decipher, eval = !(typeDada), include=FALSE}
+
+library("DECIPHER")
+
+## Download database
+silva_DEC = "http://www2.decipher.codes/Classification/TrainingSets/SILVA_SSU_r138_2019.RData"
+silva_decDir <- file.path(taxDBdir, basename(silva_DEC))
+
+if(!file.exists(silva_decDir)){
+  download.file(silva_DEC, silva_decDir)
+}
+
+## Path to training set
+load(silva_decDir)
+
+## Create a DNAStringSet from the ASVs
+dna <- DNAStringSet(getSequences(seqtab.fin))
+
+ids <- IdTaxa(dna, trainingSet, strand="top", processors=NULL, verbose=FALSE) # use all processors
+ranks <- c("domain", "phylum", "class", "order", "family", "genus", "species") # ranks of interest
+
+## Convert the output object of class "Taxa" to a matrix analogous to the output from assignTaxonomy
+taxid <- t(sapply(ids, function(x) {
+m <- match(ranks, x$rank)
+taxa <- x$taxon[m]
+taxa[startsWith(taxa, "unclassified_")] <- NA
+taxa
+}))
+
+## turn colname into ranks from above
+colnames(taxid) <- ranks
+
+## sequence as rownames
+rownames(taxid) <- getSequences(seqtab.fin)
+
+deciTaxid <- file.path(reportDir, "taxaDecipher.RDS")
+saveRDS(taxid, deciTaxid)
+
+```
+
+
+``` {r dada2Typing, eval = typeDada, include = FALSE}
+
+## Download silva genus database
+silva_lnk = "https://zenodo.org/record/3986799/files/silva_nr99_v138_wSpecies_train_set.fa.gz"
+silva_tr = file.path(taxDBdir, basename(silva_lnk))
+
+if(!file.exists(silva_tr)){
+  download.file(silva_lnk, silva_tr)
+}
+
+## Asign of taxonomy
+taxa <- assignTaxonomy(seqtab.fin, silva_tr, tryRC=TRUE,  multithread=TRUE)
+
+dadaTaxid <- file.path(reportDir, "taxaDada.RDS")
+saveRDS(taxa, dadaTaxid)
+
+```
+
+
+Taxonomy was assigned using `r typeTyping` method.
+
+
+```{r taxaRDS}
+
+deciTaxid <- file.path(reportDir, "taxaDecipher.RDS")
+dadaTaxid <- file.path(reportDir, "taxaDada.RDS")
+
+if (typeTyping == "DECIPHER") {
+  xfun::embed_file(deciTaxid, text = "Download the raw Deciper typing file." )
+} else {
+  xfun::embed_file(dadaTaxid, text = "Download the raw dada2 typing file.")
+}
+
+```
+
+```{r end2}
+
+end_time <- Sys.time()
+end_time - start_time
+
+```

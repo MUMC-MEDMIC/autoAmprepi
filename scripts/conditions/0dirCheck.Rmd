@@ -1,0 +1,64 @@
+---
+title: "Dir checker"
+output: html_document
+
+---
+
+
+```{r }
+
+## Project
+if (is.null(params$reportName)){
+
+  projectn <- params$projectname
+} else {
+  projectn <- projectN
+}
+
+```
+
+```{r}
+
+## Raw directory standalone condition (no params from main script)
+if (is.null(params$rawdir)){
+
+  ## Load standalone dir params
+  pathRaw <- params$dirRaw
+
+  ## Check raw directory
+  if (!dir.exists(params$dirRaw)) {
+
+    print ("Please provide a working directory")
+    knitr::knit_exit()
+  }
+
+} else {
+
+  ## Load in setting file for rawdir
+  pathRaw <- rawDir
+}
+
+```
+
+```{r, include = FALSE}
+
+## Working directory standalone condition
+if (is.null(params$outdir)){
+  
+  ## Use standalone path
+  outpath <- normalizePath(params$dirOut, winslash = "/")
+} else {
+
+  ## Use path from main script
+  outpath <- outDir
+}
+
+## Report directory
+reportDir <- file.path(outpath, "p16sReport")
+
+## Check if result folder exists
+ifelse(!dir.exists(reportDir), dir.create(reportDir), FALSE)
+
+```
+
+
