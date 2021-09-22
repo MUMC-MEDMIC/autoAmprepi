@@ -1,0 +1,384 @@
+---
+title: "Preprocessing 16S Report"
+bibliography: references.bib
+
+params:
+  reportName:
+    label: "Name of the report"
+    value: "@project_name"
+    input: text
+  rawdir:
+    label: "Working directory"
+    value: "@raw_folder"
+    input: text
+  data:
+    label: "Experiment file"
+    value: "@metafile"
+    input: file
+  outdir:
+    label: "Result directory"
+    value: "@out_folder"
+    input: text
+  primerFor:
+    label: "Forward primer"
+    value: "@primer_forward"
+    input: text
+  primerRev:
+    label: "Reverse primer"
+    value: "@primer_reverse"
+    input: text
+  trimForward:
+    label: "Trimming forward length"
+    value: @trim_forward
+    input: numeric
+  trimReverse:
+    label: "Trimming reverse length"
+    value: @trim_reverse
+    input: numeric
+  minReads:
+    label: "Minimum reads number"
+    input: numeric
+    value: @min_reads
+  deconMethod:
+    label: "Decontam removal"
+    input: radio
+    value: "@deContam"
+    choices: ["frequency", "prevalence", "combined", "minimum", "either", "both"]
+  taxa:
+    label: "Typing method: dada2 (species) or DECIPHER (genus)"
+    input: radio
+    value: dada2
+    choices: ["dada2"]
+
+output:
+   html_document:
+      toc: true # table of content true
+      toc_float: true
+      toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+      fig_caption: true
+      highlight: tango  # specifies the syntax highlighting style
+#      number_sections: true  ## if you want number sections at each table header
+#      theme: united 
+
+---
+
+
+<style>
+body {
+text-align: justify}
+</style>
+
+
+```{r setup, echo = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+
+```
+
+
+```{r libMain, include = FALSE}
+
+library("ShortRead")
+library("dada2")
+library("tidyverse")
+library("knitr")
+library("phyloseq")
+
+start_time <- Sys.time()
+
+```
+
+
+```{r reportDirCreate, include = FALSE}
+
+## Check if output path exist, if not create directory/subdirectories
+ifelse(!dir.exists(params$outdir), dir.create(params$outdir, recursive=TRUE), FALSE)
+
+## Locate the output directory
+outDir <- normalizePath(params$outdir, winslash = "/")
+
+## Report directory
+reportDir <- file.path(outDir, "p16sReport")
+
+## Check if result folder exists
+ifelse(!dir.exists(reportDir), dir.create(reportDir), FALSE)
+
+```
+
+
+```{r inputControl}
+
+## Check if raw directory does not exists
+if (!dir.exists(params$rawdir)) {
+
+  print ("Please provide a working directory")
+  knitr::knit_exit()
+} else {
+
+  ## File path
+  rawDir <- normalizePath(params$rawdir, winslash = "/")
+}
+
+if (!dir.exists(params$outdir)) {
+
+  dir.create(params$outdir)
+}
+
+## Check if experimental file exists
+if (file.exists(params$data)) {
+
+  experimentFile <- normalizePath(params$data, winslash = "/")
+
+  ## Load in experimental file
+  ## Check for semicolon
+  L <- readLines(experimentFile, n = 1)
+
+  if (grepl(";", L)){
+
+    metaInfo <- read.csv(experimentFile, sep = ";")
+  } else {
+
+    metaInfo <- read.csv(experimentFile)
+  }
+
+  ## Missing Samples column
+  if(!"Samples" %in% colnames(metaInfo)){
+
+    print ("Missing Samples column! Check input file.")
+    knitr::knit_exit()
+  }
+
+  ## Remove blank rows?
+
+  ## Check for duplicates sample names
+  if(any(duplicated(metaInfo$Samples))){
+
+    dupSamp <- metaInfo[duplicated(metaInfo$Samples),]
+    write.csv(dupSamp, paste0(reportDir,"/dupSamples.csv"))
+    print (paste0("Samples with similar name: ", dupSamp$Samples))
+    print ("Please recheck !")
+
+    ## Non duplicated samples names
+#    metaInfo <- metaInfo[!duplicated(metaInfo$Samples),]
+    knitr::knit_exit()
+  }
+
+  if ("Sample_Type" %in% colnames(metaInfo)) {
+
+    decontamMode <- "prevalence"
+    if (("DNA_con" %in% colnames(metaInfo)) && (!("" %in% unique(metaInfo$DNA_con)))){
+
+      decontamMode <- c("frequency", "prevalence", "combined", "minimum", "either", "both")
+    }
+  } else {
+
+    decontamMode <- "None"
+  }
+} else {
+
+  print ("Missing metafile. Please provide")
+  knitr::knit_exit()
+}
+
+```
+
+
+```{r paramsVariables}
+
+projectN <- params$reportName
+primerForward <- params$primerFor
+primerReverse <- params$primerRev
+trimForward <- params$trimForward
+trimReverse <- params$trimReverse
+minReads <- params$minReads
+#taxaTyping <- params$taxa
+taxaTyping <- "dada2"
+deContam <- params$deconMethod
+
+```
+
+
+```{r primerInput}
+
+if (primerForward != '' & primerReverse != ''){
+  
+  primerFound <- TRUE
+  FWD <- primerForward
+  REV <- primerReverse
+
+  priPairs <- paste0("forward: ", primerForward, " and reverse: ", primerReverse)
+} else {
+  
+  primerFound <- FALSE
+}
+
+```
+
+
+```{r fastqDirCheck}
+
+## Match _R1 with forward fastq files
+fnFs <- sort(intersect(list.files(params$rawdir, pattern="_R1", full.names = TRUE), list.files(params$rawdir, pattern="fastq", full.names = TRUE)))
+
+samples.forward <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+## Reverse files
+fnRs <- sort(intersect(list.files(params$rawdir, pattern="_R2", full.names = TRUE), list.files(params$rawdir, pattern="fastq", full.names = TRUE)))
+
+samples.reverse <- sapply(strsplit(basename(fnRs), "_"), `[`, 1)
+
+## Common sample names
+sample.names <- intersect(samples.forward,samples.reverse)
+
+## Check if there are any fastq
+if (length(sample.names) == 0){
+
+  print ("No fastq files found. Please provide a correct directory.")
+  knitr::knit_exit()
+}
+
+```
+
+```{r matchingFastq}
+
+## Match Samples with actual found samples
+metaSamples <- metaInfo$Samples
+foundSamples <- intersect(metaSamples,sample.names)
+
+analyseSamples <- data.frame(Samples = foundSamples, Status = "Found")
+
+## raw fastq vs names on metafile eg: setdiff(metaSamples,sample.names)
+## metafile vs raw fastq eg: setdiff(sample.names,metaSamples)
+## Both diff c(setdiff(metaSamples,sample.names), setdiff(sample.names,metaSamples))
+
+missingRaw <- setdiff(metaSamples,sample.names)
+
+if (identical(missingRaw, character(0))){
+
+  finalStatus <- analyseSamples
+} else {
+
+  missingSamples <- data.frame(Samples = missingRaw, Status = "Missing")
+  finalStatus <- rbind(analyseSamples, missingSamples)
+}
+
+metaFinal <- merge(x=metaInfo, y=finalStatus, by="Samples",all=TRUE)
+
+## Detect and remove empty columns
+emptycols <- sapply(metaFinal, function (k) all(is.na(k)))
+metaFinal <- metaFinal[!emptycols]
+
+write.csv(metaFinal, file.path(reportDir,"metafile.csv"))
+
+```
+
+
+## Settings
+
+- Project name: `r projectN`
+- Primers `r if (primerFound==TRUE){ priPairs } else { "Missing" }`
+- Raw path: `r basename(rawDir)`
+- Fastq pairs found in `r basename(rawDir)` folder: `r length(sample.names)`
+- Metafile: `r if (experimentFile == "Missing") {"Missing. Simple metafile will be created for the analysis."} else { basename(experimentFile) }`
+- Report directory: `r basename(outDir)`
+- Trim length forward: `r trimForward` bp and reverse: `r trimReverse` bp.
+- Minimum reads `r minReads` bp.
+- Taxonomic classification: `r taxaTyping` using [SILVA-138v2](https://zenodo.org/record/3986799#.YOQMfugzZPY).  
+- Possible deContam mode: `r decontamMode`
+
+
+```{r paramsSettings}
+
+fullSettings <- rbind(projectN, rawDir, experimentFile, outDir, primerForward, primerReverse, trimForward, trimReverse, minReads, taxaTyping, deContam)
+colnames(fullSettings) <- "settings"
+write.csv(fullSettings, file.path(reportDir, "settings.csv"))
+
+```
+
+
+```{r preProcess, child = "scripts/0_rawCheck.Rmd"}
+
+```
+
+
+```{r dada2analyst, child = "scripts/1_dada2.Rmd"}
+
+```
+
+
+```{r typingBac, child = "scripts/2_typing.Rmd"}
+
+```
+
+
+```{r taxonomies, child = "scripts/3_taxa_info.Rmd"}
+
+```
+
+
+## Further filtering
+
+Please visit https://giangle.shinyapps.io/phyloFilter/ for a real-time customisable ASV filtering of the phyloseq file.
+
+
+```{r finalDetail, include = FALSE}
+
+finalASV <- FALSE
+if (file.exists(file.path(reportDir, paste0(projectN,"_finPS.rds")))) {
+
+  finPS <- readRDS(file.path(reportDir, paste0(projectN,"_finPS.rds")))
+  finalASV <- TRUE
+  abundf = apply(X = otu_table(finPS),
+                  MARGIN = ifelse(taxa_are_rows(finPS), yes = 1, no = 2),
+                  FUN = function(x){sum(x > 0)})
+
+  ## Add taxonomy and total read counts to this data.frame
+  abundf = data.frame(Prevalence = abundf,
+                       TotalAbundance = taxa_sums(finPS))
+  
+  totalReads <- sum(abundf$TotalAbundance)
+  
+  fltAbunDF <- abundf %>% rownames_to_column("ASVs") %>% 
+                  mutate(Prevalence_percentage = Prevalence/nsamples(finPS) * 100, Abundance_percentage = TotalAbundance/totalReads*100) %>%
+                  dplyr::select(ASVs,Prevalence,Prevalence_percentage,TotalAbundance,Abundance_percentage) %>%
+                  filter(Prevalence_percentage >= 5 & Abundance_percentage >= 0.001)
+}
+
+```
+
+
+## Methods
+
+
+The pre-processing of sequencing data, using an in-house pipeline based upon DADA2 [@Callahan2016] was running on R version 4.1.0 [@RCoreTeam2020] and rmarkdown [@Allaire2021; @Xie2018; @Xie2020], consisted of the following steps: reads filtering, identification of sequencing errors, dereplication, inference and removal of chimeric sequences [@Callahan2016a].
+The length of the raw reads was detected using HTSeqGenie [@Pau2014] and sequence manipulation was done using Biostrings [@PagesHAboyounPGentlemanR2019].
+In order to assign taxonomy, DADA2 was used to annotate up to the species level using the database SILVA 138 version 2 (https://zenodo.org/record/3986799#.YOQMfugzZPY).
+Data were expressed as Amplicon Sequence Variants (ASVs).
+Decontam was used with the `r deContam` setting`r if (deContam == "either") {", which combines the two statistical methods prevalence and frequency for the indentification of contamination in marke-gene and metagenomics data"}` [@Davis2018].
+The tidyverse package was used for data manipulation and figures generation [@Hadley2019].
+Phylogenetic tree was generated using phangorn package [@Schliep2011].
+There were `r if (finalASV) { ntaxa(finPS)} else {"number"}` ASVs in the pre-process file, which was saved in the phyloseq format [@McMurdie2013].
+
+
+### Online filtering
+
+
+An online shiny app (https://giangle.shinyapps.io/phyloFilter/) was used to filter ASVs, which presented in less than `r if (finalASV) { ceiling(totalReads / 100 * 0.01) } else {"number"}` (0.01 %) reads and appeared in less than `r if (finalASV) {ceiling(nsamples(finPS) / 100 * 5)} else {"number"}` samples (5 %).
+A total of `r if (finalASV) { nrow(fltAbunDF)} else {"number"}` ASVs were maintained for downstream analysis.
+
+
+## Session Info
+
+
+```{r session}
+
+sessionInfo()
+
+```
+
+
+## References
+
+
+`r knitr::knit_exit()`
+
