@@ -1,0 +1,470 @@
+---
+title: "Dada2 processing"
+output: html_document
+
+params:
+  projectname:
+    label: "Name of the report"
+    value: "MockTest"
+    input: text
+  dirRaw:
+    label: "Working directory"
+    value: "../raw"
+    input: text
+  dirOut:
+    label: "Output directory"
+    value: "../"
+    input: text
+  forwTrim:
+    label: "Trimming forward position"
+    value: 240
+    input: numeric
+  revrTrim:
+    label: "Trimming reverse position"
+    value: 210
+    input: numeric
+  minreads:
+    label: "Minimum reads number"
+    input: numeric
+    value: 25000
+---
+
+```{r setup1, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+```
+
+
+```{r reproduce1}
+## Change to FALSE if you ran the analysis and only want to produce the report again
+firstRun1 <- TRUE
+```
+
+
+```{r paramDirs1, include = FALSE, child = "conditions/0dirCheck.Rmd"}
+```
+
+
+```{r reportDir1, include = FALSE}
+## Filtered folder
+fltDir <- file.path(reportDir, "filtered")
+inferDir <- file.path(reportDir,"inference") 
+ifelse(!dir.exists(inferDir), dir.create(inferDir), FALSE)
+errorDir <- file.path(reportDir, "errorRates")
+ifelse(!dir.exists(errorDir), dir.create(errorDir), FALSE)
+```
+
+
+```{r trimmingParams}
+## Condition if pre-check file exists
+finsamfile <- file.path(file.path(reportDir,"metafile.csv"))
+## Standalone script load in.
+## Check file exists
+if (file.exists(finsamfile)) {
+  ## Set file to variable
+  expriFile <- read.csv(finsamfile)
+  expriFile$X <- NULL
+} else {
+  print ("Missing processing file to continue further. Please go back one step.")
+  knitr::knit_exit()
+} 
+## Trimming forward value
+if (!is.null(params$trimForward)){
+  cutForw <- params$trimForward
+} else {
+  cutForw <- params$forwTrim
+}
+## Trimming reverse value
+if (!is.null(params$trimReverse)){
+  cutRerv <- params$trimReverse
+} else {
+  cutRerv <- params$revrTrim
+}
+## Turns on standalone settings for min reads
+if (is.null(params$minReads)) {
+  min_reads <- params$minreads
+} else {
+  min_reads <- minReads
+}
+```
+
+
+```{r lib1, include = FALSE}
+library("dada2")
+library("tidyverse")
+start_time <- Sys.time()
+```
+
+
+```{r trimRaws, eval = firstRun1, include = FALSE, warning = FALSE}
+## Only analyse found files
+expriFound <- expriFile[expriFile$Status=="Found",]
+readtrack <- data.frame(matrix(nrow = nrow(expriFound), ncol = 2))
+if (dir.exists(file.path(reportDir, "cutadapted"))) {
+  pathRaw <- file.path(reportDir, "cutadapted")
+}  
+## Working on sample
+for (i in 1:nrow(expriFound)){
+    
+  ## Sample names
+  sampName <- expriFound$Samples[i]
+  
+  ## Identify forward and reverse reads
+  fnF <- intersect(list.files(pathRaw, pattern = paste0(sampName,"_"), full.names = TRUE), list.files(pathRaw, pattern = "_R1", full.names = TRUE))
+  fnR <- intersect(list.files(pathRaw, pattern = paste0(sampName,"_"), full.names = TRUE), list.files(pathRaw, pattern = "_R2", full.names = TRUE))  
+  
+  ## Name of filtered reads
+  filtF <- file.path(fltDir, paste0(sampName, "_F_filt.fastq.gz"))
+  filtR <- file.path(fltDir, paste0(sampName, "_R_filt.fastq.gz"))
+  ## names function to set name of an object
+  names(filtF) <- sampName
+  names(filtR) <- sampName
+    
+  ## Conflicting same forward or reverse base name
+  if (length(fnF) > 1 | length(fnR) > 1) {
+      print ("Please check these files due to naming issues")
+      print (paste0("Forward ", fnF, " and Reverse ",fnR))
+      knitr::knit_exit()
+  }
+  
+  ## Raw read in and out after trimming
+  out <- filterAndTrim(fnF, filtF, fnR, filtR, truncLen=c(cutForw,cutRerv),
+                   maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+                   compress=TRUE, multithread=TRUE)
+    
+#  out <- filterAndTrim(fnF, filtF, fnR, filtR, maxN = 0, maxEE = c(2, 2), 
+#  truncQ = 2, minLen = 50, rm.phix = TRUE, compress = TRUE, multithread = TRUE)
+  ## Save first line
+  readtrack[i,1:2] <- out[1:2]
+}
+## For checking
+colnames(readtrack) <- c("raw","filtered")
+readtrack$Samples <- expriFound$Samples
+write.csv(readtrack, file.path(reportDir,"readtrack.csv"))
+```
+
+
+
+```{r trimmedCheck}
+if (!file.exists(file.path(reportDir,"readtrack.csv")) ){
+  print("Please trim raw files to process further")
+  knitr::knit_exit()
+}
+```
+
+
+## Reads filtering
+
+Filtering out low-quality sequencing reads and trimming the reads. Often the reverse read's quality drops significantly from the last 90 nucleotides. The final length of the forward and reverse reads are `r cutForw` and `r cutRerv` nucleotides, respectively. The standard filtering setting was used with the enforcement of maximum of 2 expected errors per-read. 
+
+
+```{r afterFilterFig, warning=FALSE}
+filtFR <- list.files(fltDir, pattern = "filt", full.names = TRUE)
+readsFilt <- plotQualityProfile(filtFR[1:2])
+readsFilt
+```
+
+
+```{r readsCheck}
+## Condition to check if trimming removed most of the reads
+readtrack <- read.csv(file.path(reportDir,"readtrack.csv"))
+rawSum <- sum(readtrack$raw)
+filteredSum <- sum(readtrack$filtered)
+if (filteredSum / rawSum < 0.1) {
+  print ("The sum of filtered reads are less than 10%. Recheck trimming length!")
+  knitr::knit_exit()
+}
+```
+
+
+## Error rates 
+
+Different amplicon dataset has a different set of error rates. DADA2 method use relies on a parameterized model of substitution errors to distinguish sequencing errors from real biological variation. The protocol uses a form of unsupervised learning in which sample inference is alternated with parameter estimation until both are jointly consistent.
+
+
+```{r filteredFiles}
+## Find forward and reverse filtered files
+filtFs <- list.files(fltDir ,pattern="_F_filt.fastq.gz", full.names = TRUE)
+filtRs <- list.files(fltDir, pattern="_R_filt.fastq.gz", full.names = TRUE)
+## Extract sample names from folder
+sampleNames <- sapply(strsplit(basename(filtFs), "_"), `[`, 1)
+## names function to set name of an object
+names(filtFs) <- paste0(sampleNames,"_")
+names(filtRs) <- paste0(sampleNames,"_")
+## Load in reads tracking file
+readstrack <- read.csv(file.path(reportDir,"readtrack.csv"), row.names = 1)
+trimmedSamples <- readstrack$Samples
+## Keep intersect samples
+finSampleNames <- intersect(sampleNames, trimmedSamples)
+```
+
+
+```{r dadaFunc}
+dada2analysis <- function(trimmedNames, poolNumb) {
+  <<sampleDetect>>
+  <<errorRates>>
+  <<inference>>
+}
+```
+
+
+```{r sampleDetect, eval = FALSE}
+pat <- paste(trimmedNames, collapse = '|')
+ffiltered <- intersect(list.files(fltDir, pattern=pat, full.names=TRUE), list.files(fltDir, pattern="F_filt", full.names=TRUE))
+rfiltered <- intersect(list.files(fltDir, pattern=pat, full.names=TRUE), list.files(fltDir, pattern="R_filt", full.names=TRUE))
+## Extract sample names from folder
+sampleNames <- sapply(strsplit(basename(ffiltered), "_"), `[`, 1)
+## names function to set name of an object
+names(ffiltered) <- paste0(sampleNames,"_")
+names(rfiltered) <- paste0(sampleNames,"_")
+```
+
+
+```{r errorRates, eval = FALSE, results = 'hide', message = FALSE, warning = FALSE}
+## Set seed 
+set.seed(100)
+errF <- learnErrors(ffiltered, nbases = 1e8, multithread=TRUE, randomize=TRUE)
+errR <- learnErrors(rfiltered, nbases = 1e8, multithread=TRUE, randomize=TRUE)
+## Save error rates
+saveRDS(errF, file.path(errorDir, paste0(poolNumb, "_errorforwd.RDS")))
+saveRDS(errR, file.path(errorDir, paste0(poolNumb, "_errorrevse.RDS")))
+errForward <- plotErrors(errF, nominalQ=TRUE) 
+ggsave(file.path(errorDir, paste0(poolNumb, "_forwdErrors.png")), errForward , device="png")
+errReverse <- plotErrors(errR, nominalQ=TRUE)
+ggsave(file.path(errorDir, paste0(poolNumb, "_revrdErrors.png")), errReverse , device="png")
+```
+
+
+```{r inference, eval = FALSE}
+## Load error rates
+errF <- readRDS(file.path(errorDir, paste0(poolNumb, "_errorforwd.RDS")))
+errR <- readRDS(file.path(errorDir, paste0(poolNumb, "_errorrevse.RDS")))
+## Create vector to store data
+dds <- vector("list", length(trimmedNames))
+names(dds) <- trimmedNames
+for(sam in trimmedNames) {
+  
+  ## Remove duplicate reads
+  derepF <- derepFastq(ffiltered[[sam]])
+  derepR <- derepFastq(rfiltered[[sam]])
+  
+  ## Inference using error rate
+  dadaFs <- dada(derepF, err=errF, multithread=TRUE)
+  saveRDS(dadaFs, file.path(inferDir, paste0(sam,"_inferFs.RDS")))
+  dadaRs <- dada(derepR, err=errR, multithread=TRUE)
+  saveRDS(dadaRs, file.path(inferDir, paste0(sam,"_inferRs.RDS")))
+  ## Merge pairs
+  dds[[sam]] <- mergePairs(dadaFs, filtFs[[sam]], dadaRs, filtRs[[sam]], verbose=TRUE)
+}
+saveRDS(dds, file.path(inferDir, paste0(poolNumb, "_dds.RDS")))
+# Construct sequence table and write to disk
+seqtab <- makeSequenceTable(dds)
+seqtabFile <- file.path(errorDir, paste0(poolNumb, "_seqtab.RDS"))
+saveRDS(seqtab, seqtabFile)
+```
+
+
+```{r trimmedFiles, eval = FALSE}
+## Load back metafile
+expriFile <- read.csv(finsamfile)
+expriFile$X <- NULL
+## Takeout filtered samples
+analysisFiltered <- expriFile[expriFile$Samples %in% finSampleNames,]
+expriFound <- analysisFiltered[analysisFiltered$Status=="Found",]
+```
+
+```{r dada2Run, eval = firstRun1, include = FALSE, results = 'hide', message = FALSE, warning = FALSE}
+<<trimmedFiles>>
+<<dadaFunc>>
+if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
+  ## Pool analysis. Only works if column is filled
+  for (u in unique(expriFound$Pool)){
+    poolRun <- expriFound[expriFound$Pool==u,"Samples"]
+    poolRun <- paste0(poolRun,"_")
+    dada2analysis (poolRun, u)
+  }
+} else {
+  ## No pool, analyse samples as one
+  noPoolSamples <- analysisFiltered$Samples
+  noPoolSamples <- paste0(noPoolSamples,"_")
+  dada2analysis (noPoolSamples, "Pool")
+}
+```
+
+
+```{r combineRuns, eval = firstRun1, message = FALSE, warning = FALSE}
+<<trimmedFiles>>
+## Incase of multiple pools, reverse sequences incase sequences are reversed
+if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
+  ## All pool names
+  allPools <- data.frame(expriFound %>% group_by(Pool) %>% count(Pool) %>% arrange(n) )
+  ## First pool as base
+  baseSeqtabName <- allPools[["Pool"]][1]
+  baseSeqtabPath <- file.path(errorDir, paste0(baseSeqtabName, "_seqtab.RDS"))
+  
+  ## Check file exists
+  if (file.exists(baseSeqtabPath)){
+    seqtabBase <- readRDS(baseSeqtabPath)
+  } else {
+    cat("Missing Seqtab file. Please recheck!")
+  }
+  
+  ## Condition for single pool
+  if (nrow(allPools) > 1) {
+    ## Start from the second pool onward
+    for (p in 2:nrow(allPools)){
+    
+      checkSeqtab <- allPools[["Pool"]][p]
+      checkSeqtabPath <- file.path(errorDir, paste0(checkSeqtab, "_seqtab.RDS"))
+    
+      if (file.exists(checkSeqtabPath)){
+    
+        currentSeqtab <- readRDS(checkSeqtabPath)
+        ## Moves on when blank file is loaded
+        if (ncol(currentSeqtab) == 0){
+          next
+        } else {
+ 
+          ## Merge sequence table in original orientation
+          mergetab <- mergeSequenceTables(seqtabBase, currentSeqtab)
+          ## Reverse sequences and merge
+          currentSeqtab2 <- currentSeqtab
+          colnames(currentSeqtab2) <- dada2:::rc(colnames(currentSeqtab))
+          mergetab2 <- mergeSequenceTables(seqtabBase, currentSeqtab2)
+          ## Check which orientation has less sequences
+          if (ncol(mergetab) < ncol(mergetab2)){
+            seqtabBase <- mergetab
+          } else {
+            seqtabBase <- mergetab2
+          }
+        }
+      } else {
+        cat("Missing Seqtab file. Please recheck!")
+      }
+    } 
+  }
+## Condition for no pool
+} else {
+  baseSeqtabPath <- file.path(errorDir, paste0("Pool", "_seqtab.RDS"))
+  if (file.exists(baseSeqtabPath)){
+    seqtabBase <- readRDS(baseSeqtabPath)
+  }
+}
+## listSeqTab <- list.files(path, pattern = "seqtab", full.name=TRUE)
+## mergetab <- mergeSequenceTables(tables=listSeqTab)
+saveRDS(seqtabBase, file.path(reportDir,"seqtab.RDS"))
+## Remove chimeras
+seqtab.nochim <- removeBimeraDenovo(seqtabBase, method="consensus", multithread=TRUE, verbose=TRUE)
+## Rename sample.names back
+rownames(seqtab.nochim) <- gsub("_$","",rownames(seqtab.nochim))
+seqtabnochimFile <- file.path(reportDir,"seqtab_nochim.RDS")
+saveRDS(seqtab.nochim, seqtabnochimFile)
+```
+
+
+```{r forrevErr, fig.cap = "Error rate for forward reads"}
+<<trimmedFiles>>
+if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
+  allPools <- data.frame(expriFound %>% group_by(Pool) %>% count(Pool) %>% arrange(n) )
+  poolName <- allPools[["Pool"]][1]
+  knitr::include_graphics(file.path(errorDir, paste0(poolName, "_forwdErrors.png")))
+} else {
+  knitr::include_graphics(file.path(errorDir, paste0("Pool", "_forwdErrors.png")))
+}
+```
+
+
+```{r revErr, fig.cap = "Error rate for the reverse reads"}
+<<trimmedFiles>>
+if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
+  allPools <- data.frame(expriFound %>% group_by(Pool) %>% count(Pool) %>% arrange(n) )
+  poolName <- allPools[["Pool"]][1]
+  knitr::include_graphics(file.path(errorDir, paste0(poolName, "_revrdErrors.png")))
+} else {
+  knitr::include_graphics(file.path(errorDir, paste0("Pool", "_revrdErrors.png")))
+}
+```
+
+
+## Preprocessing
+
+
+At this stage the reads are dereplicated to remove identical sequences to reduce computation time. They are inferenced and merged together to obtain the full denoised sequences. Sequences with forward and reverse reads overlaping by at least 12 bases, and are identical to each other in the overlap regions are aligned together.    
+
+
+```{r readLengths, fig.cap = "Distribution of sequence lengths"}
+## Load in seqtab
+seqstab <- readRDS(file.path(reportDir,"seqtab.RDS"))
+seqstab.nochim <-  readRDS(file.path(reportDir,"seqtab_nochim.RDS"))
+### Seqtab is a matrix
+## Histogram of read lengths
+hist(nchar(getSequences(seqstab.nochim)), main=NULL, xlab="Read lengths")
+```
+
+
+```{r tracking_reads}
+## Turns samples to rowname
+rownames(readstrack) <- readstrack$Samples
+readstrack$Samples <- NULL
+## Combine values
+#track <- cbind(readstrack, rowSums(seqstab), rowSums(seqstab.nochim))
+boundSeqstab <- cbind(rowSums(seqstab), rowSums(seqstab.nochim))
+rownames(boundSeqstab) <- gsub("_$","",rownames(boundSeqstab))
+track <- merge(readstrack, boundSeqstab, by="row.names")
+## Rename columns
+colnames(track) <- c("Samples","raw", "filtered", "merged", "nonchim")
+track <- track %>% filter(nonchim > 0)
+readsTracking <- file.path(reportDir,"reads_tracking.csv")
+write.csv(track, readsTracking)
+## Merge sample with reads tracking
+sampTrack <- merge(expriFile, track[,c("Samples","nonchim")], by="Samples")
+sampTrack$Status <- NULL
+sampTrackReads <- file.path(reportDir,"finSamples_reads.csv")
+write.csv(sampTrack, sampTrackReads)
+percSeq <- round((sum(seqstab)-sum(seqstab.nochim))/sum(seqstab)*100, digits = 2)
+```
+
+
+Chimeric sequences are identified if they can be exactly reconstructed by combining a left-segment and a right-segment from two more abundant “parent” sequences. For this run, the removed chimeric sequences were about `r percSeq` % in total.  
+
+The final reads will be used for taxonomic typing and can be download: `r xfun::embed_file(file.path(reportDir,"seqtab_nochim.RDS"), text = "Seqtabs (rds)")`
+
+
+```{r libSizeCheck}
+## Condition incase of analysis not from the beginning
+readsTracking <- file.path(reportDir,"finSamples_reads.csv")
+sampTrack <- read.csv(readsTracking)
+sampTrack$X <- NULL
+names(sampTrack)[names(sampTrack) == "Row.names"] <- "Samples"
+## Check if specific columns exist 
+colTitles <- c("Sample_Type")
+if (any(colTitles %in% colnames(sampTrack))) {
+  
+  libSizFig = TRUE
+} else {
+  libSizFig = FALSE
+  write.csv(sampTrack, file.path(reportDir, "filterdExp.csv"))
+ 
+}
+```
+
+
+```{r rawLib, child = if (libSizFig) "conditions/1libSize.Rmd" }
+```
+
+
+```{r sequencetabNoChimera}
+filterdExp <- read.csv(file.path(reportDir, "filterdExp.csv"))
+filterdExp$X <- NULL
+keep <- filterdExp$Samples
+seqtab.nochim <- readRDS(file.path(reportDir, "seqtab_nochim.RDS"))
+## Keep qualify samples only
+seqtab_fin <- seqtab.nochim[rownames(seqtab.nochim) %in% keep, ]
+seqtabFinFile <- file.path(reportDir, paste0(projectn, "_seqtab_fin.RDS"))
+saveRDS(seqtab_fin, seqtabFinFile)
+```
+
+
+```{r end1}
+end_time <- Sys.time()
+end_time - start_time
+```

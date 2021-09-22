@@ -1,0 +1,538 @@
+---
+title: "Pre sample processing"
+output: html_document
+
+params:
+  projectname:
+    label: "Name of the report"
+    value: "MockTest"
+    input: text
+  dirRaw:
+    label: "Working directory"
+    value: "../raw"
+    input: text
+  dirOut:
+    label: "Output directory"
+    value: "../"
+    input: text
+  taxo:
+    label: "Typing method: dada2 (species) or DECIPHER (genus)"
+    input: radio
+    value: DECIPHER
+    choices: ["dada2", "DECIPHER"]
+  decontamMethod:
+    label: "Decontam method"
+    input: radio
+    value: either
+    choices: [ "frequency", "prevalence","combined","minimum","either","both" ]
+  taxoLevel:
+    label: "Agglomerate taxonomy"
+    input: radio
+    value: family
+    choices: ["phylum", "class", "order", "family", "genus", "species"]
+    
+---
+
+```{r setup3, echo = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+
+```
+
+
+```{r reproduce3}
+
+## Change to FALSE if you ran the analysis and only want to produce the report again
+firstRun3 <- TRUE
+
+```
+
+
+```{r lib3, include = FALSE}
+
+library("tidyverse")
+library("phyloseq")
+library("decontam")
+library("microbiome")
+library("DECIPHER")
+library("phangorn")
+library("gridExtra")
+library("Biostrings")
+
+start_time <- Sys.time()
+
+```
+
+
+```{r paramDirs3, child = "conditions/0dirCheck.Rmd"}
+
+```
+
+
+```{r taxoParams}
+
+## Check experimental file from main script
+## If the parameter is empty turns on standalone settings
+if (is.null(params$taxa)) {
+
+  typeTyping <- "dada2"
+} else {
+
+  typeTyping <- "dada2"
+}
+
+deciTaxid <- file.path(reportDir, "taxaDecipher.RDS")
+dadaTaxid <- file.path(reportDir, "taxaDada.RDS")
+
+if (typeTyping == "dada2") {
+  
+  if(file.exists(dadaTaxid)){
+
+    taxid <- readRDS(dadaTaxid)
+    dadaTyping = TRUE
+  } else {
+
+    print ("Missing dada2 taxonomy file. Please go back one stage.")
+    knitr::knit_exit()
+  }
+} else if (typeTyping == "DECIPHER") {
+  
+  if(file.exists(deciTaxid)){
+
+    taxid <- readRDS(deciTaxid)
+    dadaTyping = FALSE
+  } else {
+
+    print ("Missing Decipher taxonomy file. Please go back one stage.")
+    knitr::knit_exit()
+  }
+}
+
+if(file.exists(file.path(reportDir, "filterdExp.csv"))){
+
+  filterdExp <- read.csv(file.path(reportDir, "filterdExp.csv"))
+  filterdExp$X <- NULL
+} else {
+
+  print ("Missing filtered experiment file. Please go back one stage.")
+  knitr::knit_exit()
+}
+
+if(file.exists(file.path(reportDir, paste0(projectn, "_seqtab_fin.RDS")))){
+
+  seqtab.fin <- readRDS(file.path(reportDir, paste0(projectn, "_seqtab_fin.RDS")))
+} else {
+
+  print ("Missing final seqtab file. Please go back one stage.")
+  knitr::knit_exit()
+}
+
+if(is.null(params$deconMethod)){
+
+  methdContam <- params$decontamMethod
+} else {
+
+  methdContam <- deContam
+}
+
+```
+
+
+```{r taxoDF}
+
+## Turn into a dataframe
+dftaxid <- as.data.frame(unlist(taxid))
+
+```
+
+
+```{r taxDada2Genus, eval = dadaTyping}
+
+dftaxid <- dftaxid %>% rownames_to_column("Seq") %>% dplyr::select(Seq,Kingdom,Phylum,Class,Order,Family,Genus,Species) %>% mutate(Kingdom=paste0("k__",Kingdom), Phylum=paste0("p__",Phylum), Class=paste0("c__",Class), Order=paste0("o__", gsub(" ","_",Order)), Family=paste0("f__",gsub(" ","_",Family)), Genus=paste0("g__", gsub(" ","_",Genus)), Species=paste0("s__", gsub(" ","_",Species)))
+
+## Join taxa together
+pastecols <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+
+## Taxonomy column
+#dftaxid$taxonomy <- apply( dftaxid[ , pastecols ] , 1 , paste , collapse = ";" )
+
+## Reordering columns
+#dftaxid <- dftaxid %>% dplyr::select(Seq,taxonomy,Kingdom,Phylum,Class,Order,Family,Genus,Species)
+
+## Change Seq to rownames
+rownames(dftaxid) <- dftaxid$Seq
+dftaxid$Seq <- NULL
+
+```
+
+
+```{r taxDecipherGenus, eval = !(dadaTyping) }
+
+## Taxa at genus level
+dftaxid <- dftaxid %>% rownames_to_column("Seq") %>% dplyr::select(Seq,Kingdom,Phylum,Class,Order,Family,Genus) %>% mutate(Kingdom=paste0("k__",Kingdom), Phylum=paste0("p__",Phylum), Class=paste0("c__",Class), Order=paste0("o__", gsub(" ","_",Order)), Family=paste0("f__",gsub(" ","_",Family)), Genus=paste0("g__", gsub(" ","_",Genus)))
+
+## Join taxa together
+pastecols <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+
+## Taxonomy column
+#dftaxid$taxonomy <- apply( dftaxid[ , pstcols ] , 1 , paste , collapse = ";" )
+
+## Reordering columns
+#dftaxid <- dftaxid %>% dplyr::select(Seq,taxonomy,Kingdom,Phylum,Class,Order,Family,Genus)
+
+## Change Seq to rownames
+rownames(dftaxid) <- dftaxid$Seq
+dftaxid$Seq <- NULL
+
+```
+
+
+```{r datataxid}
+
+write.csv(dftaxid, file.path(reportDir,"dftaxid.csv"))
+
+```
+
+
+```{r alignDNA, eval = firstRun3, included = FALSE, warning = FALSE}
+
+## Gets DNA sequences
+seqs <- rownames(dftaxid)
+names(seqs) <- seqs
+
+## Align DNA seqs
+alignment <- AlignSeqs(DNAStringSet(seqs), anchor=NA,verbose=FALSE)
+
+phangAlign <- phyDat(as(alignment, "matrix"), type="DNA")
+dm <- dist.ml(phangAlign)
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+
+## pml: computes the likelihood of a phylogenetic tree given a sequence alignment and a model
+fit = pml(treeNJ, data=phangAlign)
+
+## update allows to change parameters
+## use njt to fit GTR+G+I (Generalized time-reversible with Gamma rate variation) maximum likelihood tree
+fitGTR <- update(fit, k=4, inv=0.2)
+
+## Optimize all the parameters.
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+        rearrangement = "stochastic", control = pml.control(trace = 0))
+#detach("package:phangorn", unload=TRUE)
+
+write.tree(fitGTR$tree,file.path(reportDir,"rawTree.tre"))
+saveRDS(fitGTR, file.path(reportDir,"rawTree.RDS"))
+
+```
+
+
+```{r treeCheck}
+
+if (!file.exists(file.path(reportDir,"rawTree.RDS"))) {
+
+  print ("Missing tree file. Please rerun")
+  knitr::knit_exit()
+}
+
+```
+
+
+## Taxonomic classification 
+
+
+The phyloseq file:
+
+
+```{r phyloseq}
+
+dftaxid <- read.csv(file.path(reportDir,"dftaxid.csv"))
+rownames(dftaxid) <- dftaxid$X
+dftaxid$X <- NULL
+#dftaxid$taxonomy <- NULL
+
+## Load in raw tree
+fitGTR <- readRDS(file.path(reportDir,"rawTree.RDS"))
+ps_tree <- phy_tree(fitGTR$tree)
+
+filterdExp <- read.csv(file.path(reportDir, "filterdExp.csv"))
+
+## Turn col Row.names to rownames
+rownames(filterdExp) <- filterdExp$Samples
+filterdExp$Samples <- NULL
+filterdExp$Index <- NULL
+filterdExp$nonchim <- NULL
+filterdExp$readLength <- NULL
+filterdExp$X <- NULL
+
+ps <- phyloseq(otu_table(seqtab.fin, taxa_are_rows=FALSE),
+               sample_data(filterdExp),
+               tax_table(as.matrix(dftaxid)), ps_tree)
+
+## Gets DNA sequences
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+
+## Number of taxonomies
+tax_found <- ntaxa(ps)
+
+## Filter taxa with no samples
+fltps <- prune_taxa(taxa_sums(ps) > 0, ps)
+
+## Filter samples with no reads (Condition for custom run)
+fltps <- prune_samples(sample_sums(fltps) > 0, fltps)
+
+taxFlt <- ntaxa(fltps)
+nsampFlt <- nsamples(fltps)
+
+saveRDS(fltps, file.path(reportDir,"ps_no_Chime.RDS"))
+
+print (fltps)
+
+```
+
+
+All the reads are merged together and were subject of classification using using `r typeTyping`. There are `r taxFlt` taxa in `r nsampFlt` samples. The taxa abundance was calculated by the sum per-taxon. The phyloseq file can be downloaded: `r xfun::embed_file(file.path(reportDir,"ps_no_Chime.RDS"), text = "Here!")`
+
+
+```{r taxaAbundFigRaw, warning = FALSE}
+
+fltps <- readRDS(file.path(reportDir,"ps_no_Chime.RDS"))
+
+### Draws the Phylum abundance figure with everything
+## Compute number of sample for each ASV, store as data.frame
+abunfltdf = apply(X = otu_table(fltps),
+                  MARGIN = ifelse(taxa_are_rows(fltps), yes = 1, no = 2),
+                  FUN = function(x){sum(x > 0)})
+
+## Add taxonomy and total read counts to this data.frame
+abunfltdf = data.frame(Prevalence = abunfltdf,
+                       TotalAbundance = taxa_sums(fltps),
+                       tax_table(fltps)[, "Phylum"])
+
+ggplot(abunfltdf, aes(TotalAbundance, Prevalence / nsamples(fltps),color=Phylum)) +
+   geom_point(size = 1, alpha = 0.5) +
+   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.3)) +
+   scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
+   facet_wrap(~Phylum) + theme(legend.position="none")
+
+```
+
+
+For individual sample, each ASV’s counts were divided by the total number of counts to get proportion. Each dot presents an ASV at the Phylum level. Prevalence shows how often such ASV appears in all samples. Total abundance displays the number of reads per ASV.    
+
+
+```{r phyFeatures}
+
+phyTable <- table(tax_table(fltps)[, "Phylum"], exclude = NULL) %>% as.data.frame()
+names(phyTable) <- c("Phylum","Features")
+phyTable <- phyTable %>% arrange(desc(Features))
+
+knitr::kable(phyTable, caption = "Number of ASVs/features for each phyla")
+
+```
+
+
+```{r decontamCheck}
+
+colTitles <- c("DNA_con","Sample_Type")
+contamRemov = FALSE
+
+## Condition for decontam prevalence or frequency methods 
+if ((any(colTitles %in% colnames(filterdExp))) && ( !("" %in% unique(filterdExp$DNA_con)))) {
+
+  contamRemov = TRUE
+}
+
+
+```
+
+
+```{r decontam, child = if (contamRemov) "conditions/3decontam.Rmd", warning = FALSE}
+
+```
+
+
+```{r afterDecontam}
+
+if (contamRemov) {
+
+  ## Input is contamfree phyloseq
+  fltps.ContamFree <- readRDS(file.path(reportDir, "fltpsContamFree.RDS"))
+  ## Remove the negative column
+  sample_data(fltps.ContamFree)$is.neg <- NULL
+} else {
+  
+  ## No chimera ps as decontamination method was not provided 
+  fltps.ContamFree <- readRDS(file.path(reportDir,"ps_no_Chime.RDS"))
+}
+
+## Remove taxa with 0 count
+fltps.ContamFree <- prune_taxa(taxa_sums(fltps.ContamFree) > 0, fltps.ContamFree)
+
+```
+
+
+```{r finalReads}
+
+if (file.exists(file.path(reportDir,"reads_tracking.csv"))) {
+  track <- read.csv(file.path(reportDir,"reads_tracking.csv"))
+  track$X <- NULL
+
+  if (contamRemov) {
+
+    track$final_reads <- NULL
+    fin_reads <- data.frame(otu_table(fltps.ContamFree))
+    fin_reads$final_reads <-  apply(fin_reads, 1, FUN=function(x) sum(x))
+    fin_reads <- fin_reads %>% rownames_to_column("Samples")
+
+    track <- merge(track, fin_reads[,c("Samples","final_reads")], by="Samples")
+
+    write.csv(track, file.path(reportDir,"reads_tracking.csv"))
+    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
+  } else {
+
+    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
+  }
+}
+
+```
+
+
+For the complete data of all samples please download  `r if (file.exists(file.path(reportDir,"reads_tracking.csv"))) { xfun::embed_file( file.path(reportDir,"reads_tracking.csv"), text = "Here !") }`
+
+
+```{r mockCheck}
+
+mockAnalysis <- FALSE
+if ("Mock" %in% unique(sample_data(fltps.ContamFree)$Sample_Type)) {
+
+  mockAnalysis <- TRUE
+}
+
+```
+
+
+```{r mockInfo, child = if (mockAnalysis) "conditions/3mockinfo.Rmd"}
+
+```
+
+
+## Final files
+
+
+Mocks and Negative controls are were removed from the final phyloseq file. The final phylum composition is shown below.
+
+
+```{r phyFinFeatures, eval = mockAnalysis}
+
+## Remove Mock samples
+finPs <- prune_samples(sample_data(fltps.ContamFree)$Sample_Type != "Mock", fltps.ContamFree)
+
+if (any(sample_data(finPs)$Sample_Type != "Negative")) {
+
+  finPs <- prune_samples(sample_data(finPs)$Sample_Type != "Negative", finPs)
+}
+
+```
+
+
+```{r phyFeature, eval = !(mockAnalysis)}
+
+finPs <- fltps.ContamFree
+
+```
+
+
+```{r finalPhyloseq}
+
+## Remove empty taxa
+finPs <- prune_taxa(taxa_sums(finPs) > 0, finPs)
+
+print (finPs)
+saveRDS(finPs, file.path(reportDir, paste0(projectn,"_finPS.rds")))
+
+### Draws the final Phylum abundance figure
+abunfltdf2 = apply(X = otu_table(finPs),
+                  MARGIN = ifelse(taxa_are_rows(finPs), yes = 1, no = 2),
+                  FUN = function(x){sum(x > 0)})
+
+## Add taxonomy and total read counts to this data.frame
+abunfltdf2 = data.frame(Prevalence = abunfltdf2,
+                       TotalAbundance = taxa_sums(finPs),
+                       tax_table(finPs)[, "Phylum"])
+
+ggplot(abunfltdf2, aes(TotalAbundance, Prevalence / nsamples(finPs),color=Phylum)) +
+   geom_point(size = 1, alpha = 0.5) +
+   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.3)) +
+   scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
+   facet_wrap(~Phylum) + theme(legend.position="none")
+
+phyTable <- table(tax_table(finPs)[, "Phylum"], exclude = NULL) %>% as.data.frame()
+names(phyTable) <- c("Phylum","Features")
+phyTable <- phyTable %>% arrange(desc(Features))
+
+knitr::kable(phyTable, caption = "Number of ASVs/features for each phyla")
+
+```
+
+
+```{r treefig}
+
+taxLevel <- "Genus"
+finpsCustom <- tax_glom(finPs, taxrank=taxLevel, NArm = TRUE)
+
+multiPlotTitleTextSize = 15
+p1tree = plot_tree(finPs, method = "treeonly",
+                   ladderize = "left",
+                   title = "Before agglomeration") +
+  theme(plot.title = element_text(size = multiPlotTitleTextSize))
+
+p2tree = plot_tree(finpsCustom, method = "treeonly",
+                   ladderize = "left", title = paste0("By ",taxLevel)) +
+   theme(plot.title = element_text(size = multiPlotTitleTextSize))
+
+grid.arrange(nrow = 1, p1tree, p2tree)
+
+## Gets abundance table for each sample
+#treSamp = as.data.frame(microbiome::abundances(fltps.ContamFree))
+#treSamp$ASVs <- row.names(treSamp)
+
+## Get taxonomy out of phyloseq
+#treTax <- as.data.frame(tax_table(fltps.ContamFree))
+#treTax$ASVs <- row.names(treTax)
+
+```
+
+
+There are `r length(get_taxa_unique(finPs, taxonomic.rank = taxLevel))` unique taxa at this level.
+
+
+```{r finalextract}
+
+asvTable <- otu_table(finPs)
+write.csv(asvTable, file.path(reportDir,"finASV.csv"))
+
+taxaTble <- tax_table(finPs)
+write.csv(taxaTble, file.path(reportDir,"finTAXA.csv"))
+
+sampls <- sample_data(finPs)
+write.csv(sampls, file.path(reportDir,"finSAMP.csv"))
+
+treePhy <- phy_tree(finPs)
+saveRDS(treePhy, file.path(reportDir,"finTree.RDS"))
+
+
+```
+
+
+The final phyloseq can be downloaded: `r xfun::embed_file(file.path(reportDir, paste0(projectn,"_finPS.rds")), text = "Here")`.
+Separate files include: `r xfun::embed_file(file.path(reportDir,"finASV.csv"), text = "ASVs")`, `r xfun::embed_file(file.path(reportDir,"finTAXA.csv"), text = "Taxa")`, `r xfun::embed_file(file.path(reportDir,"finSAMP.csv"), text = "Experiments")` and `r xfun::embed_file(file.path(reportDir,"finTree.RDS"), text = "Tree")`.
+
+
+```{r end3}
+
+end_time <- Sys.time()
+end_time - start_time
+
+```

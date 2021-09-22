@@ -1,0 +1,165 @@
+---
+title: "Primer checker"
+output: html_document
+
+---
+
+
+```{r primersLibs, include = FALSE}
+
+library(dada2)
+library(ShortRead)
+library(Biostrings)
+
+```
+
+
+```{r cutOption}
+
+primerRemoval <- FALSE
+
+```
+
+
+```{r cutadapt, eval = primerRemoval}
+
+## For linux activate conda env then which cutadapt, must list out user path
+
+cutAdapt <- "/home/giang.le/anaconda3/envs/prep16s/bin/cutadapt"
+
+```
+
+
+```{r primerOrientations}
+
+allOrients <- function(primer) {
+    # Create all orientations of the input sequence
+    require(Biostrings)
+    dna <- DNAString(primer)  # The Biostrings works w/ DNAString objects rather than character vectors
+    orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna),
+        RevComp = reverseComplement(dna))
+    return(sapply(orients, toString))  # Convert back to character vector
+}
+
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+
+```
+
+
+Table shows the number of primers present. Analysis will stop if primers are found over 200 reads.
+
+
+```{r primersCount}
+
+primerHits <- function(primer, fn) {
+    # Counts number of reads in which the primer is found
+    nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = FALSE)
+    return(sum(nhits > 0))
+}
+
+checkPrimers <- rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs[[1]]),
+    FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs[[1]]),
+    REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs[[1]]),
+    REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs[[1]]))
+
+knitr::kable(checkPrimers)
+
+priHits <- data.frame(checkPrimers)
+priLeft <- any(colSums(priHits)>200)
+
+write.csv(priHits, file.path(reportDir, "primersHits.csv"))
+
+```
+
+
+```{r priConclusion, eval = priLeft}
+
+FWD.RC <- dada2:::rc(FWD)
+REV.RC <- dada2:::rc(REV)
+
+forwardforward <- priHits[1,1]
+forwardrevrse <- priHits[2,1]
+
+if (forwardrevrse > forwardforward) {
+
+  #Trim FWD and the reverse-complement of REV off of R1 (forward reads)
+  R1.flags <- paste("-G", FWD, "-A", REV.RC) 
+  # Trim REV and the reverse-complement of FWD off of R2 (reverse reads)
+  R2.flags <- paste("-g", REV, "-a", FWD.RC)
+
+} else {
+
+  #Trim FWD and the reverse-complement of REV off of R1 (forward reads)
+  R1.flags <- paste("-g", FWD, "-a", REV.RC) 
+  # Trim REV and the reverse-complement of FWD off of R2 (reverse reads)
+  R2.flags <- paste("-G", REV, "-A", FWD.RC)
+}
+
+write.csv(R1.flags, file.path(reportDir, "primerForward.csv"))
+write.csv(R2.flags, file.path(reportDir, "primerReverse.csv"))
+
+```
+
+
+Primer conclusion: `r if (priLeft == TRUE) { "Please remove primers before process further" } else { "Little or no primers found" }`
+
+
+```{r primersOut, eval = primerRemoval}
+
+path.cut <- file.path(reportDir, "cutadapted")
+if(!dir.exists(path.cut)) dir.create(path.cut)
+
+sample.names <- finalStatus[finalStatus$Status=="Found","Samples"]
+
+for(s in 1:length(sample.names)){
+
+  fnFs <- sort(intersect(list.files(rawDir, pattern=paste0(sample.names[[s]],"_"), full.names = TRUE), list.files(rawDir, pattern="_R1", full.names = TRUE)))
+  fnRs <- sort(intersect(list.files(rawDir, pattern=paste0(sample.names[[s]],"_"), full.names = TRUE), list.files(rawDir, pattern="_R2", full.names = TRUE)))
+
+  fnFs.cut <- file.path(path.cut, basename(fnFs))
+  fnRs.cut <- file.path(path.cut, basename(fnRs))
+
+  ## If no primer files exist then continue
+  if ((file.exists(fnFs.cut)) && (file.exists(fnFs.cut))) {
+
+    next
+  } else {
+
+    system2(cutAdapt, args = c(R1.flags, R2.flags, "-n", 2, # -n 2 required to remove FWD and REV from reads
+                             "-o", fnFs.cut, "-p", fnRs.cut, # output files
+                             fnFs, fnRs)) # input files
+  }
+}
+
+```
+
+
+```{r filteredCheck, eval = primerRemoval}
+
+cutFs <- sort(list.files(path.cut, pattern = "_R1", full.names = TRUE))
+cutRs <- sort(list.files(path.cut, pattern = "_R2", full.names = TRUE))
+
+filtedPrimers <- rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = cutFs[[1]]), 
+    FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = cutRs[[1]]), 
+    REV.ForwardReads = sapply(REV.orients, primerHits, fn = cutFs[[1]]), 
+    REV.ReverseReads = sapply(REV.orients, primerHits, fn = cutRs[[1]]))
+
+knitr::kable(filtedPrimers)
+
+fltHits <- data.frame(filtedPrimers)
+fltPriLeft <- any(colSums(fltHits)>200)
+
+if (fltPriLeft == TRUE) {
+
+  print ("Please check cutadapt primers were not removed")
+} else {
+
+  print ("No primers left. Processing further!")
+}
+
+```
+
+
+
+

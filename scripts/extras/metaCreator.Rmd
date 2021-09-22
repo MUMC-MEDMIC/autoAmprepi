@@ -1,0 +1,99 @@
+---
+title: "Raw checker"
+output: html_document
+
+params:
+  dirRaw:
+    label: "Working directory"
+    value: "/home/giang.le/typing_16S/prep16s/done_projects/Lucky/raw16sdata"
+    input: text
+  dirOut:
+    label: "Output directory"
+    value: "../Lucky/raw16sdata/cutadapt"
+    input: text
+  expFile:
+    label: "Experimental file"
+    value: "/home/giang.le/typing_16S/prep16s/vn/experiment_vn.csv"
+    input: text
+
+---
+
+
+```{r setup0, echo = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+
+```
+
+
+## Check file location
+
+```{r experiFiller, include = FALSE}
+
+if (params$expFile != ""){
+  if (file.exists(params$expFile)){
+
+    cat ("Metafile found")
+    metaAdd = TRUE
+    metaCreate = FALSE
+  }
+
+} else {
+
+  print ("No experimental file. Metafile generating")
+  metaAdd = FALSE
+  metaCreate = TRUE
+
+}
+
+```
+
+```{r dirCheck}
+
+pathRaw <- params$dirRaw
+if (!dir.exists(pathRaw)){
+
+  print ("Please provide the correct path")
+  knitr::knit_exit()
+
+}
+
+```
+
+```{r rawPath}
+
+pathRaw <- params$dirRaw
+if (dir.exists(pathRaw)){
+  fastqFound <- list.files(pathRaw, pattern="fastq", full.names = TRUE, recursive = TRUE)
+  rawOnly <- fastqFound[!grepl("trim|filt", fastqFound)]
+
+  fastqTable <- data.frame(gsub("_.*","", basename(rawOnly)), dirname(rawOnly))
+
+  colnames(fastqTable) <- c("Sample","FilePath")
+  fastqTable <- fastqTable[duplicated(fastqTable),]
+  rownames(fastqTable) <- NULL
+
+  if (any(duplicated(fastqTable$Sample))){
+
+    dupSamp <- fastqTable[duplicated(fastqTable$Sample),]
+    print (paste0("Samples with similar name: ", dupSamp$Samples))
+
+    knitr::knit_exit()
+
+  } else {
+    write.csv(fastqTable, "metafile.csv")
+
+  }
+
+} else {
+
+  print ("Missing Folder. Please provide the correct path")
+
+}
+
+```
+
+`r knitr::knit_exit()`
+
+
+

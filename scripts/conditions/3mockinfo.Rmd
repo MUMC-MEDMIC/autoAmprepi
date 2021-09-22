@@ -1,0 +1,84 @@
+---
+title: "Mock taxonomy"
+output: html_document
+
+---
+
+
+```{r mockLib, include = FALSE}
+
+library(plyr)
+library(tidyverse)
+library(microbiome)
+library(phyloseq)
+
+```
+
+
+## Mock analysis
+
+
+Depending on the testing kit the relative abundance of the Mock might be different. However, most of the time the frequency should be equal across all 8 genus: 
+*Staphylococcus, Salmonella, E.coli, Bacillus, Listeria, Lactobacillus, Enterococcus, Pseudomonas*
+
+
+```{r mockProcess}
+
+## Keeping only the mocks
+mockPs <- prune_samples(sample_data(fltps.ContamFree)$Sample_Type == "Mock", fltps.ContamFree)
+
+## Remove empty taxa
+mockPs <- prune_taxa(taxa_sums(mockPs) > 0, mockPs)
+
+## Remove tree
+mockPs@phy_tree <- NULL
+
+## Merge identical species
+#mockPsSpecies <- tax_glom(mockPs, taxrank="Species")
+mockPsSpecies <- tax_glom(mockPs, taxrank="Genus")
+
+## Turn to relative abundance
+mockPsSpecies  = transform_sample_counts(mockPsSpecies, function(x) x / sum(x) )
+
+## Add sciName 
+mockTax <- tax_table(mockPsSpecies)
+mockTaxdf <- data.frame(mockTax)
+
+#mockTaxdf <- mockTaxdf %>% mutate(sciName = paste0(gsub("g__","",Genus), gsub("s_","",Species)))
+mockTaxdf <- mockTaxdf %>% mutate(sciName = paste0(gsub("g__","",Genus)))
+tax_table(mockPsSpecies) <- as.matrix(mockTaxdf)
+
+# Create dataframe from phyloseq object
+mockdf <- psmelt(mockPsSpecies)
+
+# Turn sciName to a character vector from a factor for R
+mockdf$sciName <- as.character(mockdf$sciName)
+
+# Group dataframe by Species, calculate median relative abundance
+medians <- ddply(mockdf, ~sciName, function(x) c(median=median(x$Abundance)))
+
+# Find Phyla whose rel. abund. is less than 1%
+remainder <- medians[medians$median <= 0.01,]$sciName
+
+## Condition if no genus below threshold
+if (!identical(character(0), remainder)) {
+
+  # Change their name to "Others"
+  mockdf[mockdf$sciName %in% remainder,]$sciName <- 'Others'
+}
+
+ggplot(mockdf, aes(x = Sample, y = Abundance, fill = sciName)) + 
+    geom_bar(stat = "identity") +
+#    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+    coord_flip()
+
+mockFound <- length(medians[medians$median > 0.01,]$sciName)
+
+mockcsv <- mockdf[mockdf$Abundance > 0, c("OTU","Sample","Abundance","sciName")]
+write.csv(mockcsv, file.path(reportDir,"mockTaxa.csv"))
+
+```
+
+`r if (mockAnalysis) {paste0("There are ", mockFound, " main taxa with the full taxonomy file can be downloaded: ",  xfun::embed_file( file.path(reportDir,"mockTaxa.csv"), text = "Here !")) }`
+
+
