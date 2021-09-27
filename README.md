@@ -14,7 +14,8 @@ The setting file is tab seperated.
 The left column is fixed.
 Fill in the information on the right side.
 
-
+|                |                  |
+|----------------|------------------|
 | project_name   | name_of_project  |
 | raw_folder     | fastq_folder     |
 | metafile       | metafile.csv     |
@@ -27,7 +28,10 @@ Fill in the information on the right side.
 | email          | giang.le@mumc.nl |
 
 
-All the fields are composary with the exception of primers sequences.
-Provide primers to check if they are still in the raw files.
+Please provide all the requested information.
+To check if primers are still present in the raw file, provide primers sequences.
 
+Crontab will check if new files are available.
+Upond detecting these files, AMPREPI will be activated.
+The status of the analysis is sent to the provided email address.
 
