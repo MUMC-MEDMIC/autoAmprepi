@@ -1,9 +1,20 @@
 #!/bin/bash
 
+
+
+
+
 ## Working directory
 cd /home/giang.le/income_samples/
 
-## Activate when project file found
+## Check upload progress
+if [[ ! -f uploaddone.txt ]]; then
+
+	echo "No uploaded files for analysis"
+        exit
+fi
+
+## Check project file
 if [[ ! -f project.txt ]]; then
 
 	exit
@@ -84,7 +95,7 @@ else
 	mail -s "Failed run" giang.le@mumc.nl <<< "Check error for $prject "
 fi
 
-
+rm uploaddone.txt
 
 
 
