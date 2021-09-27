@@ -23,3 +23,10 @@ rule analysis:
 
         """
 
+onsuccess:
+    print("Completed without errors. Congrat")
+    shell("mail -s '16S analysis done' giang.le@mumc.nl")
+
+onerror:
+    print("An error occurred")
+    shell("mail -s 'An error occurred for 16S' giang.le@mumc.nl")
