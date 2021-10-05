@@ -7,7 +7,7 @@ Automate amprepi
 
 rule all:
     input:
-        "AMPREPI.html"
+        "AMPREPI.zip"
 
 
 rule analysis:
@@ -19,13 +19,20 @@ rule analysis:
         "envAuto.yaml"
     shell:
         """
-        Rscript -e "rmarkdown::render('AMPREPI.Rmd')"
-
+        Rscript -e "rmarkdown::render('AMPREPI.Rmd')" &> log.txt
         """
 
-onsuccess:
-    print("Completed without errors. Congrat")
-    shell("mail -s '16S analysis done' giang.le@mumc.nl")
+rule zipFile:
+    input:
+        "AMPREPI.html"
+    output:
+        "AMPREPI.zip"
+    conda:
+        "envAuto.yaml"
+    shell:
+        """
+        zip AMPREPI.zip AMPREPI.html
+        """
 
 onerror:
     print("An error occurred")
