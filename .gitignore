@@ -4,3 +4,7 @@ completed/*
 taxDB/*
 .snakemake/*
 runlog.txt
+back.sh
+foundupload
+log.txt
+nohup.out

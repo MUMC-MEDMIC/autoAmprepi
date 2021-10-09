@@ -7,31 +7,31 @@ Automate amprepi
 
 rule all:
     input:
-        "AMPREPI.zip"
+        expand("{aproject}.zip", aproject=config['project']) 
 
 
 rule analysis:
     input:
         "AMPREPI.Rmd"
     output:
-        "AMPREPI.html"
+        temp("{aproject}.html")
     conda:
         "envAuto.yaml"
     shell:
         """
-        Rscript -e "rmarkdown::render('AMPREPI.Rmd')" &> log.txt
+        Rscript -e "rmarkdown::render('AMPREPI.Rmd', output_file='{output}')" &> log.txt
         """
 
 rule zipFile:
     input:
-        "AMPREPI.html"
+        "{aproject}.html"
     output:
-        "AMPREPI.zip"
+        "{aproject}.zip"
     conda:
         "envAuto.yaml"
     shell:
         """
-        zip AMPREPI.zip AMPREPI.html
+        zip {output} {input}
         """
 
 onerror:

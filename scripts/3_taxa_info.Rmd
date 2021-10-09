@@ -339,9 +339,15 @@ colTitles <- c("DNA_con","Sample_Type")
 contamRemov = FALSE
 
 ## Condition for decontam prevalence or frequency methods 
-if ((any(colTitles %in% colnames(filterdExp))) && ( !("" %in% unique(filterdExp$DNA_con)))) {
+if ("Sample_Type" %in% colnames(filterdExp)) {
 
-  contamRemov = TRUE
+  if ("DNA_con" %in% colnames(filterdExp)) {
+
+    if (!("" %in% unique(filterdExp$DNA_con))) {
+
+      contamRemov = TRUE
+    }
+  }
 }
 
 
