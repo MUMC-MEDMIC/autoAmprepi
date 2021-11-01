@@ -22,9 +22,16 @@ if [[ -s foundupload ]]; then
 	while [ $(wc -l foundupload | awk '{print $1}') -ne 0 ]; do
 
 		if [[ -f running ]]; then
-
-			echo "Running project $(cat running). Check back later"
-			exit
+			## Condition to check if the program is running real project
+			userNamRun=$(sed 's/.*_//g;s/\..*//g' running)
+			find . -mindepth 2 -maxdepth 2 -name "project_"$userNamRun".txt" > trueRunning
+			if [[ -s trueRunning ]]; then
+				echo "Running project $(cat running). Check back later"
+				exit
+			else
+				rm running
+			fi
+			rm trueRunning
 		else
 
 			## Running file
@@ -69,7 +76,7 @@ if [[ -s foundupload ]]; then
 			done
 
 			## Input raw
-			rawDir=$(grep raw_folder input/"project_"$userNam".txt" | awk '{print $2}')
+			rawDir=$(grep "raw_folder" input/"project_"$userNam".txt" | awk '{print $2}')
 			if [ ! -d input/"$rawDir/" ] ; then
 	
 				mail -s "Failed AMPREPI: No raw folder" $mailTo <<< "Missing raw_folder. Please upload the correct raw folder or contact giang.le@mumc.nl for support!"
@@ -153,7 +160,7 @@ if [[ -s foundupload ]]; then
 				rm -r $prject/p16sReport/errorRates $prject/p16sReport/filtered $prject/p16sReport/inference
 
 				mv $prject/ completed
-				echo $runName $mailTo >> runlog.txt
+				echo $prject $runName $mailTo >> runlog.txt
 
 			else
 
