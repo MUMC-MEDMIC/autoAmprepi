@@ -115,7 +115,7 @@ if [[ -s foundupload ]]; then
 					sed "s/@"$i"//g" AMPREPI.Rmd -i
 				else
 
-					sed "s/@"$i"/"$valFound"/g" AMPREPI.Rmd -i
+					sed "s/@"$i"/"$priFound"/g" AMPREPI.Rmd -i
 				fi	
 
 			done

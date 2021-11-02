@@ -36,4 +36,4 @@ rule zipFile:
 
 onerror:
     print("An error occurred")
-    shell("mail -s 'An error occurred for 16S' giang.le@mumc.nl")
+#    shell("mail -s 'An error occurred for 16S' giang.le@mumc.nl < {log} ")
