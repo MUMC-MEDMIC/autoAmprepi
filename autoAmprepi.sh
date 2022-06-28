@@ -10,9 +10,6 @@ find completed/* -type d -ctime +7 -exec rm -rf {} \;
 ## Clean up input directory
 find completed/* -mtime +7 -exec rm {} \;
 
-# Generate runfile from template
-cp pre_AMPREPI.Rmd AMPREPI.Rmd
-
 find input/ -name "uploaddone*" | sort -V > foundupload
 
 ## Check running projects
@@ -65,7 +62,7 @@ if [[ -s foundupload ]]; then
 			mailTo=$(grep email input/"project_"$userNam".txt" | awk '{print $2}')
 			echo "User email is $mailTo"
 
-			for i in project_name raw_folder metafile trim_forward trim_reverse min_reads deContam; do
+			for i in project_name raw_folder metafile trim_forward trim_reverse min_reads amplicon_low amplicon_up deContam; do
 
 				if [[ -z $(grep $i input/"project_"$userNam".txt" | awk '{print $2}') ]]; then
 
@@ -76,6 +73,9 @@ if [[ -s foundupload ]]; then
 			done
 
 			## Input raw
+			## Generate runfile from template
+			cp pre_AMPREPI.Rmd AMPREPI.Rmd
+
 			rawDir=$(grep "raw_folder" input/"project_"$userNam".txt" | awk '{print $2}')
 			if [ ! -d input/"$rawDir/" ] ; then
 	
@@ -120,7 +120,7 @@ if [[ -s foundupload ]]; then
 
 			done
 
-			for i in project_name trim_forward trim_reverse min_reads deContam; do
+			for i in project_name trim_forward trim_reverse min_reads amplicon_low amplicon_up deContam; do
 
 				valFound=$(grep $i input/"project_"$userNam".txt" | awk '{print $2}') 
 				sed "s/@"$i"/"$valFound"/g" AMPREPI.Rmd -i
@@ -156,9 +156,11 @@ if [[ -s foundupload ]]; then
 				fi
 
 				## Move raw files to storage
-				mv $(grep raw_folder $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $(grep metafile $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $prject/
+				mv $(grep raw_folder $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $prject/
+				mv $(grep metafile $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $prject/
 				rm -r $prject/p16sReport/errorRates $prject/p16sReport/filtered $prject/p16sReport/inference
 
+				mv AMPREPI.Rmd $prject/
 				mv $prject/ completed
 				echo $prject $runName $mailTo >> runlog.txt
 
@@ -166,11 +168,13 @@ if [[ -s foundupload ]]; then
 
 				if [[ $mailTo=="giang.le@mumc.nl" ]]; then
 
-					mail -s "Failed complete run" giang.le@mumc.nl <<< "Check error for $prject "
+					mail -s "Failed complete run" -A log.txt giang.le@mumc.nl <<< "Check error for $prject "
 				else
 					mail -s "Failed complete run" $mailTo <<< "Please contact giang.le@mumc.nl for support "
-					mail -s "Failed complete run" giang.le@mumc.nl <<< "Check error for $prject "
+					mail -s "Failed complete run" -A log.txt giang.le@mumc.nl <<< "Check error for $prject "
 				fi
+
+				mv log.txt AMPREPI.Rmd $prject/
 			fi
 			rm running
 		fi

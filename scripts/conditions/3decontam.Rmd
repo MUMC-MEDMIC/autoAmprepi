@@ -29,14 +29,24 @@ decontamFull <- FALSE
 singleFreq <- FALSE
 singlePrev <- FALSE
 
-if ( "frequency" %in% decontamMode ) {
+## Condition for decontam prevalence or frequency methods
+if ("DNA_con" %in% colnames(filterdExp)) {
 
-  decontamFull <- TRUE
-} else if ( "prevalence" %in% decontamMode) {
+  ## Check if blank in DNA_con
+  if (!("" %in% unique(filterdExp$DNA_con))) {
+
+    decontamFull <- TRUE
+  } else {
+
+    singlePrev <- TRUE
+    methdContam <- "prevalence"
+  }
+
+} else {
 
   singlePrev <- TRUE
   methdContam <- "prevalence"
-} 
+}
 
 ```
 
@@ -206,7 +216,7 @@ xfun::embed_file(paste0(reportDir,"/contamTable.csv"), text = "Full list of cont
 ```
 
 
-```{r prevaTable, eval = !(decontamFull)}
+```{r prevaTableChunk, eval = !(decontamFull)}
 
 detype  <- "prevalence"
 

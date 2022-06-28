@@ -41,7 +41,7 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```{r reproduce}
 
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun0 <- FALSE
+firstRun0 <- TRUE
 ```
 
 
@@ -123,110 +123,22 @@ start_time <- Sys.time()
 ```
 
 
-```{r rerunFilesDetect, eval = (!firstRun0)}
-
-# Check if metafile exists, rename
-
-if (file.exists(file.path(reportDir,"metafile.csv"))){
-  
-  ## Rename meta to oldmeta
-  file.copy(file.path(reportDir,"metafile.csv"), file.path(reportDir,"old_metafile.csv"))
-  oldMeta <- read.csv(file.path(reportDir,"old_metafile.csv"), row.names=1)
-  foundSamples <- oldMeta[oldMeta$Status=="Found","Samples"]
-
-  missingRaw <- oldMeta[oldMeta$Status=="Missing","Samples"]
-} else {
-
-  ## If no metafile found then run first time
-  firstRun0=TRUE
-}
-
-```
-
-```{r fastqDirCheck`, eval = firstRun0}
-
-## Match _R1 with forward fastq files
-fnFs <- sort(intersect(list.files(pathRaw, pattern="_R1", full.names = TRUE), list.files(pathRaw, pattern="fastq", full.names = TRUE)))
-
-samples.forward <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
-
-## Reverse files
-fnRs <- sort(intersect(list.files(pathRaw, pattern="_R2", full.names = TRUE), list.files(pathRaw, pattern="fastq", full.names = TRUE)))
-
-samples.reverse <- sapply(strsplit(basename(fnRs), "_"), `[`, 1)
-
-## Common sample names
-sample.names <- intersect(samples.forward,samples.reverse)
-
-print (sample.names)
-
-## Check if there are any fastq
-if (length(sample.names) == 0){
-
-  print ("No fastq files found. Please provide a correct directory.")
-  knitr::knit_exit()
-}
-
-```
-
-
-```{r matchingFastq, eval = firstRun0}
-
-## Match Samples with actual found samples
-metaSamples <- metaInfo$Samples
-foundSamples <- intersect(metaSamples,sample.names)
-
-## raw fastq vs names on metafile eg: setdiff(metaSamples,sample.names)
-## metafile vs raw fastq eg: setdiff(sample.names,metaSamples)
-## Both diff c(setdiff(metaSamples,sample.names), setdiff(sample.names,metaSamples))
-
-missingRaw <- setdiff(metaSamples,sample.names)
-
-```
-
-
-```{r updateMetaFile}
-
-## df of found samples
-analyseSamples <- data.frame(Samples = foundSamples, Status = "Found")
-
-## missing raw is empty
-if (identical(missingRaw, character(0))){
-
-  finalStatus <- analyseSamples
-} else {
-
-  missingSamples <- data.frame(Samples = missingRaw, Status = "Missing")
-  finalStatus <- rbind(analyseSamples, missingSamples)
-}
-
-metaFinal <- merge(x=metaInfo, y=finalStatus, by="Samples",all=TRUE)
-
-## Detect and remove empty columns
-emptycols <- sapply(metaFinal, function (k) all(is.na(k)))
-metaFinal <- metaFinal[!emptycols]
-
-write.csv(metaFinal, file.path(reportDir,"metafile.csv"))
-
-```
-
-
 ## Raw analysis
 
 
 In the `r basename(rawDir)` folder, there were `r length(sample.names)` fastq pairs found.
 Only, samples with the corresponding pair are anaylized.
-Based on the metafile, a total of `r length(foundSamples)` samples were detected. Missing samples `r if (identical(missingRaw, character(0))){ "0" } else {length(missingRaw)}`.
-The metafile used for the run can be downloaded `r xfun::embed_file( file.path(reportDir,"metafile.csv"), text = "Here !")`  
+Based on the metafile, a total of `r length(foundSamples)` samples and `r if (identical(missingRaw, character(0))){ "0" } else {length(missingRaw)}` missing samples were detected. 
+Please check the final metafile `r xfun::embed_file( file.path(reportDir,"metafile.csv"), text = "Here !")`  
 
 
 Visualizing the quality profiles of the first two forward and reverse reads.
 
 
-```{r rawQuality, eval = firstRun0, include = FALSE}
+```{r rawQuality, warning = FALSE}
 
 ## Import final files csv
-runFiles <- read.csv(file.path(reportDir,"metafile.csv"), row.names = 1)
+runFiles <- read.csv(file.path(reportDir,"metafile.csv"))
 runFound <- runFiles[runFiles$Status=="Found",]
 
 ## First found sample
@@ -235,14 +147,7 @@ firstRaw <- head(runFound$Samples,1)
 ## Detect the first pair for figure
 samPairFig <- list.files(rawDir, pattern=firstRaw, full.names = TRUE)
 readsRaw <- plotQualityProfile(samPairFig[1:2])
-
-ggsave(file.path(reportDir,"rawReads.png"), readsRaw, device="png")
-
-```
-
-```{r firstRaw, fig.cap = "Raw quality of the first pair"}
-
-knitr::include_graphics(file.path(reportDir, "rawReads.png"))
+readsRaw
 
 ```
 
@@ -274,7 +179,7 @@ for (i in 1:nrow(runFound)){
   names(nFiltF) <- sampName
   names(nFiltR) <- sampName 
 
-  outN <- filterAndTrim(fnF, nFiltF, fnR, nFiltR, maxN = 0, matchIDs=TRUE, multithread = TRUE)
+  outN <- filterAndTrim(fnF, nFiltF, fnR, nFiltR, maxN = 0, multithread = TRUE)
   readtrack[i,1:2] <- outN[1:2]
 }
 

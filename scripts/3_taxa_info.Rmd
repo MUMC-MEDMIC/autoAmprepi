@@ -43,7 +43,7 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```{r reproduce3}
 
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun3 <- TRUE
+firstRun3 <- FALSE
 
 ```
 
@@ -239,9 +239,6 @@ if (!file.exists(file.path(reportDir,"rawTree.RDS"))) {
 ## Taxonomic classification 
 
 
-The phyloseq file:
-
-
 ```{r phyloseq}
 
 dftaxid <- read.csv(file.path(reportDir,"dftaxid.csv"))
@@ -286,13 +283,12 @@ taxFlt <- ntaxa(fltps)
 nsampFlt <- nsamples(fltps)
 
 saveRDS(fltps, file.path(reportDir,"ps_no_Chime.RDS"))
-
-print (fltps)
-
 ```
 
 
-All the reads are merged together and were subject of classification using using `r typeTyping`. There are `r taxFlt` taxa in `r nsampFlt` samples. The taxa abundance was calculated by the sum per-taxon. The phyloseq file can be downloaded: `r xfun::embed_file(file.path(reportDir,"ps_no_Chime.RDS"), text = "Here!")`
+All the merged reads were subject of classification using using `r typeTyping`.
+There are `r taxFlt` taxa in `r nsampFlt` samples.
+The taxa abundance was calculated by the sum per-taxon.
 
 
 ```{r taxaAbundFigRaw, warning = FALSE}
@@ -315,11 +311,13 @@ ggplot(abunfltdf, aes(TotalAbundance, Prevalence / nsamples(fltps),color=Phylum)
    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.3)) +
    scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
    facet_wrap(~Phylum) + theme(legend.position="none")
-
 ```
 
 
-For individual sample, each ASV’s counts were divided by the total number of counts to get proportion. Each dot presents an ASV at the Phylum level. Prevalence shows how often such ASV appears in all samples. Total abundance displays the number of reads per ASV.    
+For individual sample, each ASV’s counts were divided by the total number of counts to get proportion.
+Each dot presents an ASV at the Phylum level.
+Prevalence shows how often such ASV appears in all samples.
+Total abundance displays the number of reads per ASV.    
 
 
 ```{r phyFeatures}
@@ -329,27 +327,30 @@ names(phyTable) <- c("Phylum","Features")
 phyTable <- phyTable %>% arrange(desc(Features))
 
 knitr::kable(phyTable, caption = "Number of ASVs/features for each phyla")
+```
 
+
+The raw phyloseq file can be downloaded: `r xfun::embed_file(file.path(reportDir,"ps_no_Chime.RDS"), text = "Here!")`
+
+
+```{r rawPs}
+
+print (fltps)
 ```
 
 
 ```{r decontamCheck}
 
-colTitles <- c("DNA_con","Sample_Type")
 contamRemov = FALSE
 
 ## Condition for decontam prevalence or frequency methods 
 if ("Sample_Type" %in% colnames(filterdExp)) {
 
-  if ("DNA_con" %in% colnames(filterdExp)) {
+  if ("Negative" %in% filterdExp$Sample_Type) {
 
-    if (!("" %in% unique(filterdExp$DNA_con))) {
-
-      contamRemov = TRUE
-    }
+    contamRemov = TRUE
   }
 }
-
 
 ```
 
@@ -379,7 +380,13 @@ fltps.ContamFree <- prune_taxa(taxa_sums(fltps.ContamFree) > 0, fltps.ContamFree
 ```
 
 
-```{r finalReads}
+## Reads tracking
+
+
+Tracking reads through different stages in the pipeline. If majority of reads were removed then it is better to revisit settings from the pipeline.  
+
+
+```{r finalReads, message=FALSE, warning=FALSE}
 
 if (file.exists(file.path(reportDir,"reads_tracking.csv"))) {
   track <- read.csv(file.path(reportDir,"reads_tracking.csv"))
@@ -395,10 +402,17 @@ if (file.exists(file.path(reportDir,"reads_tracking.csv"))) {
     track <- merge(track, fin_reads[,c("Samples","final_reads")], by="Samples")
 
     write.csv(track, file.path(reportDir,"reads_tracking.csv"))
-    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
+
+    meltTrack <- reshape2::melt(track, id.var= "Samples", value.name = "Reads", variable.name="Stage")
+    ggplot(data = meltTrack, aes(x=Stage, y=Reads, group=Samples, color=Samples)) + geom_line() + geom_point() + scale_y_continuous(expand = c(0.05,0), limits = c(0, NA)) + coord_cartesian(clip='off')
+
+#    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
   } else {
 
-    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
+#    knitr::kable(head(track), caption = "Tracking reads though the preprocessing steps")
+
+    meltTrack <- reshape2::melt(track, id.var= "Samples", value.name = "Reads", variable.name="Stage")
+    ggplot(data = meltTrack, aes(x=Stage, y=Reads, group=Samples, color=Samples)) + geom_line() + geom_point() + scale_y_continuous(expand = c(0.05,0), limits = c(0, NA)) + coord_cartesian(clip='off')
   }
 }
 
@@ -427,35 +441,41 @@ if ("Mock" %in% unique(sample_data(fltps.ContamFree)$Sample_Type)) {
 ## Final files
 
 
-Mocks and Negative controls are were removed from the final phyloseq file. The final phylum composition is shown below.
+Mocks and Negative controls were removed from the final phyloseq file. The final phylum composition is shown below.
 
 
 ```{r phyFinFeatures, eval = mockAnalysis}
 
-## Remove Mock samples
-finPs <- prune_samples(sample_data(fltps.ContamFree)$Sample_Type != "Mock", fltps.ContamFree)
+## If found sample then remove Mocks
+if (any(sample_data(fltps.ContamFree)$Sample_Type == "Sample")) {
 
-if (any(sample_data(finPs)$Sample_Type != "Negative")) {
+  ## Remove Mock samples
+  finPs <- prune_samples(sample_data(fltps.ContamFree)$Sample_Type != "Mock", fltps.ContamFree)
+} else {
 
-  finPs <- prune_samples(sample_data(finPs)$Sample_Type != "Negative", finPs)
+  finPs <- fltps.ContamFree
 }
-
 ```
 
 
 ```{r phyFeature, eval = !(mockAnalysis)}
 
+## If no Mocks in the original experiment
 finPs <- fltps.ContamFree
-
 ```
 
 
 ```{r finalPhyloseq}
 
+## Remove Negative samples left
+if (any(sample_data(finPs)$Sample_Type != "Negative")) {
+
+  finPs <- prune_samples(sample_data(finPs)$Sample_Type != "Negative", finPs)
+}
+
 ## Remove empty taxa
 finPs <- prune_taxa(taxa_sums(finPs) > 0, finPs)
 
-print (finPs)
 saveRDS(finPs, file.path(reportDir, paste0(projectn,"_finPS.rds")))
 
 ### Draws the final Phylum abundance figure
@@ -479,7 +499,6 @@ names(phyTable) <- c("Phylum","Features")
 phyTable <- phyTable %>% arrange(desc(Features))
 
 knitr::kable(phyTable, caption = "Number of ASVs/features for each phyla")
-
 ```
 
 
@@ -527,13 +546,17 @@ write.csv(sampls, file.path(reportDir,"finSAMP.csv"))
 
 treePhy <- phy_tree(finPs)
 saveRDS(treePhy, file.path(reportDir,"finTree.RDS"))
-
-
 ```
 
 
 The final phyloseq can be downloaded: `r xfun::embed_file(file.path(reportDir, paste0(projectn,"_finPS.rds")), text = "Here")`.
 Separate files include: `r xfun::embed_file(file.path(reportDir,"finASV.csv"), text = "ASVs")`, `r xfun::embed_file(file.path(reportDir,"finTAXA.csv"), text = "Taxa")`, `r xfun::embed_file(file.path(reportDir,"finSAMP.csv"), text = "Experiments")` and `r xfun::embed_file(file.path(reportDir,"finTree.RDS"), text = "Tree")`.
+
+
+```{r final}
+
+print (finPs)
+```
 
 
 ```{r end3}

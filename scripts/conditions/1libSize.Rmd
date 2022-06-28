@@ -8,6 +8,11 @@ output: html_document
 ## Quality control
 
 
+The preprocessed samples were ordered based on the library size.
+In this stage, samples with less than `r min_reads` reads were filtered out.
+Any Negative Control that has 0 reads would also be removed.
+
+
 ```{r librarySize,  message = FALSE, fig.cap = "Reads library size after preprocessing"}
 
 ## Filter out Mocks
@@ -21,7 +26,7 @@ expReads$Index <- seq(nrow(expReads))
 
 ## Draw figures
 ggplot(data=expReads, aes(x=Index, y=nonchim, color=Sample_Type)) + geom_point() +
-  labs(y="Library Size", x="Index Number") + scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+  labs(y="Library Size", x="Index Number") + scale_y_continuous( expand = c(0.05,0), limits = c(0, NA), labels = function(x) format(x, scientific = FALSE)) + coord_cartesian(clip='off')
 
 ```
 
@@ -51,13 +56,11 @@ keepSamp <- filterdExp$Samples
 filterdExp <- expReads[expReads$Samples %in% keepSamp,]
 
 ## Draw figures
-ggplot(data=filterdExp, aes(x=Index, y=nonchim, color=Sample_Type)) + geom_point() + labs(y="Library Size", x="Index Number") + scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+ggplot(data=filterdExp, aes(x=Index, y=nonchim, color=Sample_Type)) + geom_point() + labs(y="Library Size", x="Index Number") + scale_y_continuous( expand = c(0.05,0), limits = c(0, NA), labels = function(x) format(x, scientific = FALSE)) + coord_cartesian(clip='off')
 
 write.csv(filterdExp, file.path(reportDir, "filterdExp.csv"))
-
 ```
 
 
-Samples with reads below `r min_reads` were filtered out. Control samples with 0 reads were removed. After filtering only `r nrow(filterdExp)` samples and controls are left.
-
+After the minimum reads filtering stage only `r nrow(filterdExp)` samples and controls were left.
 

@@ -1,0 +1,39 @@
+---
+title: "Trimming Primers"
+output: html_document
+
+---
+
+
+```{r trimLibs, include = FALSE}
+
+library(dada2)
+library(ShortRead)
+library(Biostrings)
+
+```
+
+
+Cutadapt could not remove all primers and so the trimLeft setting was used to remove fix number of nt from the left of the reads.
+The table below shows the number of primers left after filter and trim stage.
+
+
+```{r hardTrim }
+
+hTrimF <- sort(list.files(fltDir, pattern = "F_filt", full.names = TRUE))
+hTrimR <- sort(list.files(fltDir, pattern = "R_filt", full.names = TRUE))
+
+primerHits <- function(primer, fn) {
+  # Counts number of reads in which the primer is found
+  nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = FALSE)
+  return(sum(nhits > 0))
+}
+
+trimmedReads <- rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = hTrimF[[1]]),
+           FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = hTrimR[[1]]),
+           REV.ForwardReads = sapply(REV.orients, primerHits, fn = hTrimF[[1]]),
+           REV.ReverseReads = sapply(REV.orients, primerHits, fn = hTrimR[[1]]))
+
+knitr::kable(trimmedReads)
+```
+

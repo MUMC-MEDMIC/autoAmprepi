@@ -27,24 +27,37 @@ params:
     label: "Minimum reads number"
     input: numeric
     value: 25000
+  lenASVlow:
+    label: "Lower range of ASV length"
+    value: 247
+    input: numeric
+  lenASVup:
+    label: "Upper range of ASV length"
+    value: 257
+    input: numeric
+
 ---
 
 ```{r setup1, echo = FALSE}
+
 knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```
 
 
 ```{r reproduce1}
+
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun1 <- TRUE
+firstRun1 <- FALSE
 ```
 
 
 ```{r paramDirs1, include = FALSE, child = "conditions/0dirCheck.Rmd"}
+
 ```
 
 
 ```{r reportDir1, include = FALSE}
+
 ## Filtered folder
 fltDir <- file.path(reportDir, "filtered")
 inferDir <- file.path(reportDir,"inference") 
@@ -55,8 +68,10 @@ ifelse(!dir.exists(errorDir), dir.create(errorDir), FALSE)
 
 
 ```{r trimmingParams}
+
 ## Condition if pre-check file exists
 finsamfile <- file.path(file.path(reportDir,"metafile.csv"))
+
 ## Standalone script load in.
 ## Check file exists
 if (file.exists(finsamfile)) {
@@ -67,41 +82,101 @@ if (file.exists(finsamfile)) {
   print ("Missing processing file to continue further. Please go back one step.")
   knitr::knit_exit()
 } 
+
 ## Trimming forward value
 if (!is.null(params$trimForward)){
   cutForw <- params$trimForward
 } else {
   cutForw <- params$forwTrim
 }
+
 ## Trimming reverse value
 if (!is.null(params$trimReverse)){
   cutRerv <- params$trimReverse
 } else {
   cutRerv <- params$revrTrim
 }
+
 ## Turns on standalone settings for min reads
 if (is.null(params$minReads)) {
   min_reads <- params$minreads
 } else {
   min_reads <- minReads
 }
+
+## Check primers from main script
+## If either are not null
+if (!is.null(params$primerFor) | !is.null(params$primerFor)){
+
+  ## If both primers are not empty
+  if (params$primerFor != '' && params$primerRev != ''){
+
+    ## Both primers found on main script
+    FWD <- primerForward
+    REV <- primerReverse
+    primerFound <- TRUE
+  } else {
+
+    ## Main script has no primers
+    primerFound <- FALSE
+  }
+} else {
+
+  ## No main script
+  FWD <- params$priFor
+  REV <- params$priRev
+
+  if (FWD != '' && REV != ''){
+
+    ## Standalone primers
+    primerFound <- TRUE
+  } else {
+
+    ## No stanalone primers
+    primerFound <- FALSE
+  }
+}
+
+## Turns on standalone settings for amplicon length
+if (is.null(params$asvLenLow)) {
+
+  asvLeft <- params$lenASVlow
+} else {
+
+  asvLeft <- asvLow
+}
+
+## Turns on standalone settings for amplicon length
+if (is.null(params$asvLenUp)) {
+
+  asvRight <- params$lenASVup
+} else {
+
+  asvRight <- asvUp
+}
 ```
 
 
 ```{r lib1, include = FALSE}
+
 library("dada2")
 library("tidyverse")
+library(ShortRead)
+library(Biostrings)
 start_time <- Sys.time()
 ```
 
 
 ```{r trimRaws, eval = firstRun1, include = FALSE, warning = FALSE}
+
 ## Only analyse found files
 expriFound <- expriFile[expriFile$Status=="Found",]
-readtrack <- data.frame(matrix(nrow = nrow(expriFound), ncol = 2))
+readtrackTrim <- data.frame(matrix(nrow = nrow(expriFound), ncol = 1))
+
 if (dir.exists(file.path(reportDir, "cutadapted"))) {
   pathRaw <- file.path(reportDir, "cutadapted")
 }  
+
 ## Working on sample
 for (i in 1:nrow(expriFound)){
     
@@ -119,32 +194,42 @@ for (i in 1:nrow(expriFound)){
   names(filtF) <- sampName
   names(filtR) <- sampName
     
-  ## Conflicting same forward or reverse base name
-  if (length(fnF) > 1 | length(fnR) > 1) {
-      print ("Please check these files due to naming issues")
-      print (paste0("Forward ", fnF, " and Reverse ",fnR))
-      knitr::knit_exit()
-  }
-  
+  if ((cutForw=="None") | (cutRerv=="None")){
+
   ## Raw read in and out after trimming
+  out <- filterAndTrim(fnF, filtF, fnR, filtR,
+                   maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+                   compress=TRUE, multithread=TRUE)
+
+  ## Save first line
+  readtrackTrim[i,1] <- out[2]
+  } else {
+
   out <- filterAndTrim(fnF, filtF, fnR, filtR, truncLen=c(cutForw,cutRerv),
                    maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
                    compress=TRUE, multithread=TRUE)
-    
-#  out <- filterAndTrim(fnF, filtF, fnR, filtR, maxN = 0, maxEE = c(2, 2), 
-#  truncQ = 2, minLen = 50, rm.phix = TRUE, compress = TRUE, multithread = TRUE)
+
   ## Save first line
-  readtrack[i,1:2] <- out[1:2]
+  readtrackTrim[i,1] <- out[2]
+  }
 }
+
 ## For checking
-colnames(readtrack) <- c("raw","filtered")
-readtrack$Samples <- expriFound$Samples
-write.csv(readtrack, file.path(reportDir,"readtrack.csv"))
+
+colnames(readtrackTrim) <- c("filtered")
+readtrackTrim$Samples <- expriFound$Samples
+
+readsFlow <- read.csv(file.path(reportDir,"readtrackRawN.csv"))
+readsFlow$X <- NULL
+readsFlow <- merge(readsFlow, readtrackTrim, by="Samples")
+
+write.csv(readsFlow, file.path(reportDir,"readtrack.csv"))
+
 ```
 
 
-
 ```{r trimmedCheck}
+
 if (!file.exists(file.path(reportDir,"readtrack.csv")) ){
   print("Please trim raw files to process further")
   knitr::knit_exit()
@@ -154,17 +239,33 @@ if (!file.exists(file.path(reportDir,"readtrack.csv")) ){
 
 ## Reads filtering
 
-Filtering out low-quality sequencing reads and trimming the reads. Often the reverse read's quality drops significantly from the last 90 nucleotides. The final length of the forward and reverse reads are `r cutForw` and `r cutRerv` nucleotides, respectively. The standard filtering setting was used with the enforcement of maximum of 2 expected errors per-read. 
+
+Filtering out low-quality sequencing reads and trimming the reads.
+Often the reverse read's quality drops significantly from the last 90 nucleotides.
+The final length of the forward and reverse reads are `r cutForw` and `r cutRerv` nucleotides, respectively.
+After trimming, the standard filtering setting was used with the enforcement of maximum of 2 expected errors per-read.  
+Expected errors (EE) is calculated from the nominal definition of the quality score: EE = sum(10^(-Q/10)).
+Any contaminated phiX genomes were filtered out.
 
 
-```{r afterFilterFig, warning=FALSE}
+```{r afterFilterFig, eval = firstRun1, include = FALSE}
+
 filtFR <- list.files(fltDir, pattern = "filt", full.names = TRUE)
 readsFilt <- plotQualityProfile(filtFR[1:2])
-readsFilt
+
+ggsave(file.path(reportDir,"filteredReads.png"), readsFilt, device="png")
+
+```
+
+```{r filteredRaw, fig.cap = "Trimmed first pair"}
+
+knitr::include_graphics(file.path(reportDir, "filteredReads.png"))
+
 ```
 
 
 ```{r readsCheck}
+
 ## Condition to check if trimming removed most of the reads
 readtrack <- read.csv(file.path(reportDir,"readtrack.csv"))
 rawSum <- sum(readtrack$raw)
@@ -178,10 +279,14 @@ if (filteredSum / rawSum < 0.1) {
 
 ## Error rates 
 
-Different amplicon dataset has a different set of error rates. DADA2 method use relies on a parameterized model of substitution errors to distinguish sequencing errors from real biological variation. The protocol uses a form of unsupervised learning in which sample inference is alternated with parameter estimation until both are jointly consistent.
+
+Different amplicon dataset has a different set of error rates.
+DADA2 method use relies on a parameterized model of substitution errors to distinguish sequencing errors from real biological variation.
+The protocol uses a form of unsupervised learning in which sample inference is alternated with parameter estimation until both are jointly consistent.
 
 
-```{r filteredFiles}
+```{r filteredFiles, eval = firstRun1}
+
 ## Find forward and reverse filtered files
 filtFs <- list.files(fltDir ,pattern="_F_filt.fastq.gz", full.names = TRUE)
 filtRs <- list.files(fltDir, pattern="_R_filt.fastq.gz", full.names = TRUE)
@@ -199,6 +304,7 @@ finSampleNames <- intersect(sampleNames, trimmedSamples)
 
 
 ```{r dadaFunc}
+
 dada2analysis <- function(trimmedNames, poolNumb) {
   <<sampleDetect>>
   <<errorRates>>
@@ -208,6 +314,7 @@ dada2analysis <- function(trimmedNames, poolNumb) {
 
 
 ```{r sampleDetect, eval = FALSE}
+
 pat <- paste(trimmedNames, collapse = '|')
 ffiltered <- intersect(list.files(fltDir, pattern=pat, full.names=TRUE), list.files(fltDir, pattern="F_filt", full.names=TRUE))
 rfiltered <- intersect(list.files(fltDir, pattern=pat, full.names=TRUE), list.files(fltDir, pattern="R_filt", full.names=TRUE))
@@ -220,6 +327,7 @@ names(rfiltered) <- paste0(sampleNames,"_")
 
 
 ```{r errorRates, eval = FALSE, results = 'hide', message = FALSE, warning = FALSE}
+
 ## Set seed 
 set.seed(100)
 errF <- learnErrors(ffiltered, nbases = 1e8, multithread=TRUE, randomize=TRUE)
@@ -235,6 +343,7 @@ ggsave(file.path(errorDir, paste0(poolNumb, "_revrdErrors.png")), errReverse , d
 
 
 ```{r inference, eval = FALSE}
+
 ## Load error rates
 errF <- readRDS(file.path(errorDir, paste0(poolNumb, "_errorforwd.RDS")))
 errR <- readRDS(file.path(errorDir, paste0(poolNumb, "_errorrevse.RDS")))
@@ -254,6 +363,8 @@ for(sam in trimmedNames) {
   saveRDS(dadaRs, file.path(inferDir, paste0(sam,"_inferRs.RDS")))
   ## Merge pairs
   dds[[sam]] <- mergePairs(dadaFs, filtFs[[sam]], dadaRs, filtRs[[sam]], verbose=TRUE)
+#  dds[[sam]] <- mergePairs(dadaFs, filtFs[[sam]], dadaRs, filtRs[[sam]], minOverlap = 12, verbose=TRUE)
+  ##dds[[sam]] <- mergePairs(dadaFs, filtFs[[sam]], dadaRs, filtRs[[sam]], verbose=TRUE, justConcatenate=TRUE)
 }
 saveRDS(dds, file.path(inferDir, paste0(poolNumb, "_dds.RDS")))
 # Construct sequence table and write to disk
@@ -264,6 +375,7 @@ saveRDS(seqtab, seqtabFile)
 
 
 ```{r trimmedFiles, eval = FALSE}
+
 ## Load back metafile
 expriFile <- read.csv(finsamfile)
 expriFile$X <- NULL
@@ -273,6 +385,7 @@ expriFound <- analysisFiltered[analysisFiltered$Status=="Found",]
 ```
 
 ```{r dada2Run, eval = firstRun1, include = FALSE, results = 'hide', message = FALSE, warning = FALSE}
+
 <<trimmedFiles>>
 <<dadaFunc>>
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
@@ -292,6 +405,7 @@ if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
 
 
 ```{r combineRuns, eval = firstRun1, message = FALSE, warning = FALSE}
+
 <<trimmedFiles>>
 ## Incase of multiple pools, reverse sequences incase sequences are reversed
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
@@ -352,16 +466,11 @@ if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
 ## listSeqTab <- list.files(path, pattern = "seqtab", full.name=TRUE)
 ## mergetab <- mergeSequenceTables(tables=listSeqTab)
 saveRDS(seqtabBase, file.path(reportDir,"seqtab.RDS"))
-## Remove chimeras
-seqtab.nochim <- removeBimeraDenovo(seqtabBase, method="consensus", multithread=TRUE, verbose=TRUE)
-## Rename sample.names back
-rownames(seqtab.nochim) <- gsub("_$","",rownames(seqtab.nochim))
-seqtabnochimFile <- file.path(reportDir,"seqtab_nochim.RDS")
-saveRDS(seqtab.nochim, seqtabnochimFile)
 ```
 
 
-```{r forrevErr, fig.cap = "Error rate for forward reads"}
+```{r forrevErr, eval = FALSE, fig.cap = "Error rate for forward reads"}
+
 <<trimmedFiles>>
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
   allPools <- data.frame(expriFound %>% group_by(Pool) %>% count(Pool) %>% arrange(n) )
@@ -373,7 +482,8 @@ if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
 ```
 
 
-```{r revErr, fig.cap = "Error rate for the reverse reads"}
+```{r revErr, eval = FALSE, fig.cap = "Error rate for the reverse reads"}
+
 <<trimmedFiles>>
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
   allPools <- data.frame(expriFound %>% group_by(Pool) %>% count(Pool) %>% arrange(n) )
@@ -388,20 +498,48 @@ if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
 ## Preprocessing
 
 
-At this stage the reads are dereplicated to remove identical sequences to reduce computation time. They are inferenced and merged together to obtain the full denoised sequences. Sequences with forward and reverse reads overlaping by at least 12 bases, and are identical to each other in the overlap regions are aligned together.    
+At this stage the reads are dereplicated to remove identical sequences to reduce computation time.
+They are inferenced and merged together to obtain the full denoised sequences.
+Sequences with forward and reverse reads overlaping by at least 12 bases, and are identical to each other in the overlap regions are aligned together.    
 
 
 ```{r readLengths, fig.cap = "Distribution of sequence lengths"}
+
 ## Load in seqtab
 seqstab <- readRDS(file.path(reportDir,"seqtab.RDS"))
-seqstab.nochim <-  readRDS(file.path(reportDir,"seqtab_nochim.RDS"))
 ### Seqtab is a matrix
 ## Histogram of read lengths
-hist(nchar(getSequences(seqstab.nochim)), main=NULL, xlab="Read lengths")
+hist(nchar(getSequences(seqstab)), main=NULL, xlab="Sequence lengths", ylab="Number of Sequence/ASVs")
 ```
 
+Due to non-specific priming, some sequences were much longer or shorter than expected.
+These non-target-length sequences outside of the amplicon range `r asvLeft` and `r asvRight` were removed.
+Chimeric sequences were identified and removed if they can be exactly reconstructed by combining a left-segment and a right-segment from two more abundant “parent” sequences.
+
+```{r uniqASVs, eval = firstRun1, include = FALSE}
+
+## Remove chimeras
+seqtab.nochim <- removeBimeraDenovo(seqstab, method="consensus", multithread=TRUE, verbose=TRUE)
+
+seqstab.nochim <- seqtab.nochim[,nchar(colnames(seqtab.nochim)) %in% asvLeft:asvRight]
+
+## Rename sample.names back
+rownames(seqstab.nochim) <- gsub("_$","",rownames(seqstab.nochim))
+seqtabnochimFile <- file.path(reportDir,"seqtab_nochim.RDS")
+saveRDS(seqstab.nochim, seqtabnochimFile)
+```
+
+```{r removeLongSeq, fig.cap = "Distribution of sequence lengths after length removal"}
+
+seqstab.nochim <- readRDS(file.path(reportDir,"seqtab_nochim.RDS"))
+hist(nchar(getSequences(seqstab.nochim)), main=NULL, xlab="Sequence lengths", ylab="Number of Unique Sequence/ASVs")
+```
 
 ```{r tracking_reads}
+
+## Load in reads tracking file
+readstrack <- read.csv(file.path(reportDir,"readtrack.csv"), row.names = 1)
+
 ## Turns samples to rowname
 rownames(readstrack) <- readstrack$Samples
 readstrack$Samples <- NULL
@@ -411,7 +549,7 @@ boundSeqstab <- cbind(rowSums(seqstab), rowSums(seqstab.nochim))
 rownames(boundSeqstab) <- gsub("_$","",rownames(boundSeqstab))
 track <- merge(readstrack, boundSeqstab, by="row.names")
 ## Rename columns
-colnames(track) <- c("Samples","raw", "filtered", "merged", "nonchim")
+colnames(track) <- c("Samples","raw", "Nfiltered", "filtered", "merged", "nonchim")
 track <- track %>% filter(nonchim > 0)
 readsTracking <- file.path(reportDir,"reads_tracking.csv")
 write.csv(track, readsTracking)
@@ -424,12 +562,12 @@ percSeq <- round((sum(seqstab)-sum(seqstab.nochim))/sum(seqstab)*100, digits = 2
 ```
 
 
-Chimeric sequences are identified if they can be exactly reconstructed by combining a left-segment and a right-segment from two more abundant “parent” sequences. For this run, the removed chimeric sequences were about `r percSeq` % in total.  
-
-The final reads will be used for taxonomic typing and can be download: `r xfun::embed_file(file.path(reportDir,"seqtab_nochim.RDS"), text = "Seqtabs (rds)")`
+For this run, the removed chimeric and non-target-length sequences were about `r percSeq` % in total.  
+The final reads will be used for taxonomic typing and can be downloaded: `r xfun::embed_file(file.path(reportDir,"seqtab_nochim.RDS"), text = "here !")`
 
 
 ```{r libSizeCheck}
+
 ## Condition incase of analysis not from the beginning
 readsTracking <- file.path(reportDir,"finSamples_reads.csv")
 sampTrack <- read.csv(readsTracking)
@@ -449,10 +587,12 @@ if (any(colTitles %in% colnames(sampTrack))) {
 
 
 ```{r rawLib, child = if (libSizFig) "conditions/1libSize.Rmd" }
+
 ```
 
 
 ```{r sequencetabNoChimera}
+
 filterdExp <- read.csv(file.path(reportDir, "filterdExp.csv"))
 filterdExp$X <- NULL
 keep <- filterdExp$Samples
@@ -465,6 +605,7 @@ saveRDS(seqtab_fin, seqtabFinFile)
 
 
 ```{r end1}
+
 end_time <- Sys.time()
 end_time - start_time
 ```

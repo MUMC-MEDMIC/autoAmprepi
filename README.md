@@ -35,3 +35,16 @@ Crontab will check if new files are available.
 Upond detecting these files, AMPREPI will be activated.
 The status of the analysis is sent to the provided email address.
 
+## Things to add
+
+
+* Recheck samples after N filter > update which sample failed
+
+* Add no length trimming (1_dada2.RmD)
+
+* https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5785224/
+
+* http://omegabioservices.com/index.php/16s-reference/
+
+
+

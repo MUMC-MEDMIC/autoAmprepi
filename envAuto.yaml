@@ -20,4 +20,5 @@ dependencies:
  - r-shiny=1.6.0
  - r-renv=0.13.2
  - cutadapt=3.4
+ - r-reshape2
  - zip

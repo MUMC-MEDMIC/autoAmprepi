@@ -37,8 +37,16 @@ params:
     input: numeric
   minReads:
     label: "Minimum reads number"
-    input: numeric
     value: @min_reads
+    input: numeric
+  asvLenLow:
+    label: "Lower range of ASV length"
+    value: @amplicon_low
+    input: numeric
+  asvLenUp:
+    label: "Upper range of ASV length"
+    value: @amplicon_up
+    input: numeric
   deconMethod:
     label: "Decontam removal"
     input: radio
@@ -138,7 +146,7 @@ if (file.exists(params$data)) {
     metaInfo <- read.csv(experimentFile, sep = ";")
   } else {
 
-    metaInfo <- read.csv(experimentFile)
+    metaInfo <- read.csv(experimentFile, sep = "\t")
   }
 
   ## Missing Samples column
@@ -194,7 +202,8 @@ minReads <- params$minReads
 #taxaTyping <- params$taxa
 taxaTyping <- "dada2"
 deContam <- params$deconMethod
-
+asvLow <- params$asvLenLow
+asvUp <- params$asvLenUp
 ```
 
 
@@ -283,13 +292,14 @@ write.csv(metaFinal, file.path(reportDir,"metafile.csv"))
 - Report directory: `r basename(outDir)`
 - Trim length forward: `r trimForward` bp and reverse: `r trimReverse` bp.
 - Minimum reads `r minReads` bp.
+- ASV length in range `r asvLow` and `r asvUp` bp.
 - Taxonomic classification: `r taxaTyping` using [SILVA-138v2](https://zenodo.org/record/3986799#.YOQMfugzZPY).  
 - Possible deContam mode: `r decontamMode`
 
 
 ```{r paramsSettings}
 
-fullSettings <- rbind(projectN, rawDir, experimentFile, outDir, primerForward, primerReverse, trimForward, trimReverse, minReads, taxaTyping, deContam)
+fullSettings <- rbind(projectN, rawDir, experimentFile, outDir, primerForward, primerReverse, trimForward, trimReverse, minReads, asvLow, asvUp, taxaTyping, deContam)
 colnames(fullSettings) <- "settings"
 write.csv(fullSettings, file.path(reportDir, "settings.csv"))
 
@@ -349,9 +359,9 @@ if (file.exists(file.path(reportDir, paste0(projectN,"_finPS.rds")))) {
 
 ## Methods
 
-
-The pre-processing of sequencing data, using an in-house pipeline based upon DADA2 [@Callahan2016] was running on R version 4.1.0 [@RCoreTeam2020] and rmarkdown [@Allaire2021; @Xie2018; @Xie2020], consisted of the following steps: reads filtering, identification of sequencing errors, dereplication, inference and removal of chimeric sequences [@Callahan2016a].
-The length of the raw reads was detected using HTSeqGenie [@Pau2014] and sequence manipulation was done using Biostrings [@PagesHAboyounPGentlemanR2019].
+Primers if found were removed using cutadapt [@Martin2011Cutadapt].
+The pre-processing of sequencing data, using an in-house pipeline based upon DADA2 [@Callahan2016] was running on R version 4.1.0 [@RCoreTeam2020] and rmarkdown [@Allaire2021; @Xie2018; @Xie2020], consisted of the following steps: reads filtering, identification of sequencing errors, dereplication, inference and removal of non-target-length and chimeric sequences [@Callahan2016a].
+Sequence manipulation was done using Biostrings [@PagesHAboyounPGentlemanR2019].
 In order to assign taxonomy, DADA2 was used to annotate up to the species level using the database SILVA 138 version 2 (https://zenodo.org/record/3986799#.YOQMfugzZPY).
 Data were expressed as Amplicon Sequence Variants (ASVs).
 Decontam was used with the `r deContam` setting`r if (deContam == "either") {", which combines the two statistical methods prevalence and frequency for the indentification of contamination in marke-gene and metagenomics data"}` [@Davis2018].

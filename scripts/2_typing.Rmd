@@ -28,6 +28,16 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 
 ```
 
+
+```{r reproduce2}
+
+## Change to FALSE if you ran the analysis and only want to produce the report again
+firstRun2 <- FALSE
+```
+
+
+
+
 ```{r lib2, include = FALSE}
 
 library("dada2")
@@ -70,6 +80,15 @@ if (is.null(params$taxa)) {
 
 ```
 
+```{r cutadaptClean}
+
+if (dir.exists(file.path(reportDir, "cutadapted"))) {
+  unlink(file.path(reportDir, "cutadapted"), recursive = TRUE)
+}
+
+```
+
+
 
 ```{r dirTaxaDB, include=FALSE}
 
@@ -78,17 +97,20 @@ ifelse(!dir.exists(taxDBdir), dir.create(taxDBdir),FALSE)
 
 ```
 
-```{r typingControl}
+```{r typingControl, eval = firstRun2}
 
 ## Typing type
 if (typeTyping == "dada2") {
 
-  typeDada = TRUE
+  <<dada2Typing>>
+} else {
+
+  <<decipher>>
 }
 
 ```
 
-```{r decipher, eval = !(typeDada), include=FALSE}
+```{r decipher, eval = FALSE, include=FALSE}
 
 library("DECIPHER")
 
@@ -129,7 +151,7 @@ saveRDS(taxid, deciTaxid)
 ```
 
 
-``` {r dada2Typing, eval = typeDada, include = FALSE}
+``` {r dada2Typing, eval = FALSE, include = FALSE}
 
 ## Download silva genus database
 silva_lnk = "https://zenodo.org/record/3986799/files/silva_nr99_v138_wSpecies_train_set.fa.gz"
