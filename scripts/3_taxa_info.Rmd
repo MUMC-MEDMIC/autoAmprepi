@@ -43,7 +43,7 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```{r reproduce3}
 
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun3 <- FALSE
+firstRun3 <- TRUE
 
 ```
 

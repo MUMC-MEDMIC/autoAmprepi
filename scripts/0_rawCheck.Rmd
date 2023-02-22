@@ -41,7 +41,7 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```{r reproduce}
 
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun0 <- FALSE
+firstRun0 <- TRUE
 ```
 
 
@@ -124,7 +124,7 @@ start_time <- Sys.time()
 
 
 ```{r rerunFilesDetect, eval = (!firstRun0)}
-
+# Condition triggers on rerun only
 # Check if metafile exists, rename
 
 if (file.exists(file.path(reportDir,"metafile.csv"))){
@@ -135,6 +135,9 @@ if (file.exists(file.path(reportDir,"metafile.csv"))){
   foundSamples <- oldMeta[oldMeta$Status=="Found","Samples"]
 
   missingRaw <- oldMeta[oldMeta$Status=="Missing","Samples"]
+  if (type(missingRaw)=="integer"){
+    missingRaw <- as.character(missingRaw)
+  }
 } else {
 
   ## If no metafile found then run first time
@@ -158,8 +161,6 @@ samples.reverse <- sapply(strsplit(basename(fnRs), "_"), `[`, 1)
 ## Common sample names
 sample.names <- intersect(samples.forward,samples.reverse)
 
-print (sample.names)
-
 ## Check if there are any fastq
 if (length(sample.names) == 0){
 
@@ -170,10 +171,16 @@ if (length(sample.names) == 0){
 ```
 
 
-```{r matchingFastq, eval = firstRun0}
+```{r matchFastq, eval = firstRun0}
 
 ## Match Samples with actual found samples
 metaSamples <- metaInfo$Samples
+
+# If raw file is number convert to character
+if (type(metaSamples)=="integer"){
+  metaSamples <- as.character(metaSamples)
+}
+
 foundSamples <- intersect(metaSamples,sample.names)
 
 ## raw fastq vs names on metafile eg: setdiff(metaSamples,sample.names)
@@ -231,6 +238,9 @@ runFound <- runFiles[runFiles$Status=="Found",]
 
 ## First found sample
 firstRaw <- head(runFound$Samples,1)
+if (type(firstRaw)=="integer"){
+  firstRaw <- as.character(firstRaw)
+}
 
 ## Detect the first pair for figure
 samPairFig <- list.files(rawDir, pattern=firstRaw, full.names = TRUE)

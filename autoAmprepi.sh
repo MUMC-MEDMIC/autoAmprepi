@@ -135,7 +135,9 @@ if [[ -s foundupload ]]; then
 			sed "s/@out_folder/$prject/g" AMPREPI.Rmd -i
 
 			## Activate snakemake env
-			source ~/anaconda3/bin/activate SnakeAMPREPI
+			source ~/.bashrc
+                        conda activate SnakeAMPREPI
+
 
 			mail -s "Starting analysis" $mailTo <<< "Your project $prject is running soon. Once the analysis is done, the report will be sent to you."
 			## Run snakemake
@@ -158,7 +160,7 @@ if [[ -s foundupload ]]; then
 				## Move raw files to storage
 				mv $(grep raw_folder $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $prject/
 				mv $(grep metafile $prject/"project_"$userNam".txt" | awk '{print "input/"$2}') $prject/
-				rm -r $prject/p16sReport/errorRates $prject/p16sReport/filtered $prject/p16sReport/inference
+				rm -r $prject/p16sReport/filtered $prject/p16sReport/inference
 
 				mv AMPREPI.Rmd $prject/
 				mv $prject/ completed

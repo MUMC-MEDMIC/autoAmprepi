@@ -227,12 +227,12 @@ if (primerForward != '' & primerReverse != ''){
 ```{r fastqDirCheck}
 
 ## Match _R1 with forward fastq files
-fnFs <- sort(intersect(list.files(params$rawdir, pattern="_R1", full.names = TRUE), list.files(params$rawdir, pattern="fastq", full.names = TRUE)))
+fnFs <- sort(intersect(list.files(rawDir, pattern="_R1", full.names = TRUE), list.files(rawDir, pattern="fastq", full.names = TRUE)))
 
 samples.forward <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 
 ## Reverse files
-fnRs <- sort(intersect(list.files(params$rawdir, pattern="_R2", full.names = TRUE), list.files(params$rawdir, pattern="fastq", full.names = TRUE)))
+fnRs <- sort(intersect(list.files(rawDir, pattern="_R2", full.names = TRUE), list.files(rawDir, pattern="fastq", full.names = TRUE)))
 
 samples.reverse <- sapply(strsplit(basename(fnRs), "_"), `[`, 1)
 
@@ -252,6 +252,12 @@ if (length(sample.names) == 0){
 
 ## Match Samples with actual found samples
 metaSamples <- metaInfo$Samples
+
+# If raw file is number convert to character
+if (type(metaSamples)=="integer"){
+  metaSamples <- as.character(metaSamples)
+}
+
 foundSamples <- intersect(metaSamples,sample.names)
 
 analyseSamples <- data.frame(Samples = foundSamples, Status = "Found")

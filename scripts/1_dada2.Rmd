@@ -47,7 +47,8 @@ knitr::opts_chunk$set(echo = FALSE, fig.align="center")
 ```{r reproduce1}
 
 ## Change to FALSE if you ran the analysis and only want to produce the report again
-firstRun1 <- FALSE
+firstRun1 <- TRUE
+
 ```
 
 
@@ -469,7 +470,7 @@ saveRDS(seqtabBase, file.path(reportDir,"seqtab.RDS"))
 ```
 
 
-```{r forrevErr, eval = FALSE, fig.cap = "Error rate for forward reads"}
+```{r forrevErr, fig.cap = "Error rate for forward reads"}
 
 <<trimmedFiles>>
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
@@ -482,7 +483,7 @@ if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
 ```
 
 
-```{r revErr, eval = FALSE, fig.cap = "Error rate for the reverse reads"}
+```{r revErr, fig.cap = "Error rate for the reverse reads"}
 
 <<trimmedFiles>>
 if (("Pool" %in% colnames(expriFound)) && !("" %in% unique(expriFound$Pool))){
