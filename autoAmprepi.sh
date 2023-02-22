@@ -66,7 +66,7 @@ if [[ -s foundupload ]]; then
 
 				if [[ -z $(grep $i input/"project_"$userNam".txt" | awk '{print $2}') ]]; then
 
-					mail -s "Failed AMPREPI: missing $i"  $mailTo <<< "Please check the template or tutorial on how to create the project file. Upload the new project file or contact giang.le@mumc.nl for support."
+					mail -s "Failed AMPREPI: missing $i"  $mailTo <<< "Please check the template or tutorial on how to create the project file. Upload the new project file or contact david.barnett@mumc.nl for support."
 					rm running $(cat running)
 					exit
 				fi
@@ -79,13 +79,13 @@ if [[ -s foundupload ]]; then
 			rawDir=$(grep "raw_folder" input/"project_"$userNam".txt" | awk '{print $2}')
 			if [ ! -d input/"$rawDir/" ] ; then
 	
-				mail -s "Failed AMPREPI: No raw folder" $mailTo <<< "Missing raw_folder. Please upload the correct raw folder or contact giang.le@mumc.nl for support!"
+				mail -s "Failed AMPREPI: No raw folder" $mailTo <<< "Missing raw_folder. Please upload the correct raw folder or contact david.barnett@mumc.nl for support!"
 				exit
 			else
 
 				if [[ $(find input/"$rawDir/" -name "*fastq*" | wc -l) -eq 0 ]]; then
 
-					mail -s "Failed AMPREPI: No fastq files" $mailTo <<< "No fastq files found in the $rawDir. Please upload the correct raws or contact giang.le@mumc.nl for support!"
+					mail -s "Failed AMPREPI: No fastq files" $mailTo <<< "No fastq files found in the $rawDir. Please upload the correct raws or contact david.barnett@mumc.nl for support!"
 					rm running $(cat running)
 					exit
 				else
@@ -98,7 +98,7 @@ if [[ -s foundupload ]]; then
 			metaFile=$(grep metafile input/"project_"$userNam".txt" | awk '{print $2}')
 			if [ ! -f input/"$metaFile" ] ; then
 	
-				mail -s "Failed AMPREPI: Missing metafile" $mailTo <<< "Unable to find $metaFile make sure the name is correct. Please upload a new correct project file or contact giang.le@mumc.nl for support!"
+				mail -s "Failed AMPREPI: Missing metafile" $mailTo <<< "Unable to find $metaFile make sure the name is correct. Please upload a new correct project file or contact david.barnett@mumc.nl for support!"
 				rm running $(cat running)
 				exit
 			else
@@ -151,7 +151,7 @@ if [[ -s foundupload ]]; then
 				mv $prject".zip" completed/
 				if [[ -n $(find completed -name "$prject*" -type f -size +15M) ]]; then
 
-					mail -s "Completed run" $mailTo <<< "Analysis done. However file is too large. Please contact giang.le@mumc.nl for support"
+					mail -s "Completed run" $mailTo <<< "Analysis done. However file is too large. Please contact david.barnett@mumc.nl for support"
 				else
 		
 					mail -s "Completed run" -a "completed/${prject}.zip" $mailTo <<< "Please find attached html report. The result will be deleted from ther server in 7 days"
@@ -168,12 +168,12 @@ if [[ -s foundupload ]]; then
 
 			else
 
-				if [[ $mailTo=="giang.le@mumc.nl" ]]; then
+				if [[ $mailTo=="david.barnett@mumc.nl" ]]; then
 
-					mail -s "Failed complete run" -A log.txt giang.le@mumc.nl <<< "Check error for $prject "
+					mail -s "Failed complete run" -A log.txt david.barnett@mumc.nl <<< "Check error for $prject "
 				else
-					mail -s "Failed complete run" $mailTo <<< "Please contact giang.le@mumc.nl for support "
-					mail -s "Failed complete run" -A log.txt giang.le@mumc.nl <<< "Check error for $prject "
+					mail -s "Failed complete run" $mailTo <<< "Please contact david.barnett@mumc.nl for support "
+					mail -s "Failed complete run" -A log.txt david.barnett@mumc.nl <<< "Check error for $prject "
 				fi
 
 				mv log.txt AMPREPI.Rmd $prject/
